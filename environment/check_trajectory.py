@@ -33,7 +33,6 @@ for i,file in enumerate(files):
 # df["score"].plot.hist(bins=100)
 # plt.show()
 
-
 env = gym.make('Boxoban-Train-v0')
 env.set_maxsteps(1000)
 ACTION_LOOKUP = env.unwrapped.get_action_lookup()
