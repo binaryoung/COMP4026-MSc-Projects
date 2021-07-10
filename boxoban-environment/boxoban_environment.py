@@ -1,10 +1,31 @@
 import numpy as np
 
 class BoxobanEnvironment:
+    """
+    wall = 0
+    empty = 1
+    target = 2
+    box = 3
+    box on target = 4
+    player = 5
+    player on target = 6
+    """
+    """
+    push up = 0
+    push down = 1
+    push left = 2
+    push right = 3
+    move up = 4   
+    move down = 5
+    move left = 6
+    move right = 7
+    """
+
+    moves = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
     height = 10
     width = 10
     total_boxes = 4
-    moves = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
     room = None
     topology = None
@@ -12,7 +33,7 @@ class BoxobanEnvironment:
     boxes_on_target = 0
 
     steps = 0
-    max_steps = 300
+    max_steps = 500
 
     reward_per_step = -0.1
     reward_box_on_target = 1
@@ -45,15 +66,9 @@ class BoxobanEnvironment:
             "max_steps": max_steps
         }
 
-        return self.room,reward,done,info
+        return self.observation,reward,done,info
     
     def push(self, action):
-        """
-        Perform a push, if a box is adjacent in the right direction.
-        If no box, can be pushed, try to move.
-        :param action:
-        :return: Boolean, indicating a change of the room's state
-        """
         change = self.moves[action % 4]
 
         player_location = self.player_location.copy()
@@ -61,7 +76,7 @@ class BoxobanEnvironment:
         next_box_location = next_player_location + change
 
         if next_box_location[0] >= self.height or next_box_location[1] >= self.width:
-            return
+            return 0
 
         next_player_location_state = self.room[next_player_location[0], next_player_location[1]]
         next_box_location_state = self.room[next_box_location[0], next_box_location[1]]
@@ -74,7 +89,7 @@ class BoxobanEnvironment:
 
         reward = 0
 
-        # Move Player
+        #Move Player
         self.player_location = next_player_location
         self.room[next_player_location[0], next_player_location[1]] = 6 if next_player_location_state == 4 else 5
         self.room[player_location[0], player_location[1]] = self.topology[player_location[0], player_location[1]]
@@ -83,29 +98,22 @@ class BoxobanEnvironment:
             self.boxes_on_target -= 1
             reward += self.reward_box_off_target
 
-        # Move Box
+        #Move Box
         if next_box_location_state == 2:
             self.room[next_box_location[0],next_box_location[1]] = 4
             self.boxes_on_target += 1
-            reward += self.boxes_on_target
+            reward += self.reward_box_on_target
         else:
             self.room[next_box_location[0], next_box_location[1]] = 3
         
         return reward
 
     def move(self, action):
-        """
-        Moves the player to the next field, if it is not occupied.
-        :param action:
-        :return: Boolean, indicating a change of the room's state
-        """
         change = self.moves[action% 4]
 
         player_location = self.player_location.copy()
         next_player_location = player_location + change
         
-        # Move player if the field in the moving direction is either
-        # an empty field or an empty box target.
         next_player_location_state = self.room[next_player_location[0], next_player_location[1]] 
         if not (next_player_location_state in [1, 2]):
             return 0
@@ -118,4 +126,45 @@ class BoxobanEnvironment:
 
     def set_max_steps(self, steps):
         self.max_steps = steps
+
+    @property
+    def observation(self):
+        wall = np.zeros((10, 10))
+        empty = np.zeros((10, 10))
+        target = np.zeros((10, 10))
+        box = np.zeros((10, 10))
+        box_on_target = np.zeros((10, 10))
+        player = np.zeros((10, 10))
+        player_on_target = np.zeros((10, 10))
+
+        for i,row in enumerate(self.room):
+            for j, state in enumerate(row):
+                if state == 0:
+                    wall[i, j] = 1
+                elif state == 1:
+                    empty[i, j] = 1
+                elif state == 2:
+                    target[i, j] = 1
+                elif state == 3:
+                    box[i, j] = 1
+                elif state == 4:
+                    box_on_target[i, j] = 1
+                elif state == 5:
+                    player[i, j] = 1
+                elif state == 6:
+                    player_on_target[i, j] = 1
+        
+        return np.stack((
+            wall,
+            empty,
+            target,
+            box,
+            box_on_target,
+            player,
+            player_on_target,
+        ), axis=0)
+
+
+
+
 

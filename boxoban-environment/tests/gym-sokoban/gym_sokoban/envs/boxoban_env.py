@@ -50,10 +50,9 @@ class BoxobanEnv(SokobanEnv):
         #     zip_ref.close()
         
         # self.select_room()
-
         room[room == 3] = 4
         self.player_position = np.argwhere(room == 5)[0]
-        self.room_fixed, self.room_state, self.box_mapping = topology,room,{}
+        self.room_fixed, self.room_state, self.box_mapping = topology, room, {}
 
         self.num_env_steps = 0
         self.reward_last = 0

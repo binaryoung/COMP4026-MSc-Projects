@@ -82,13 +82,7 @@ def test_levels():
     env = gym.make('Boxoban-Train-v0')
     env.set_maxsteps(1000)
 
-    id = -1
-    info = {"all_boxes_on_target": True}
-
     for i in range(5000):
-        print(f'{id}: {info.get("all_boxes_on_target", False)}')
-        assert info.get("all_boxes_on_target", False) == True
-
         (id, score, trajectory, room, topology) = collection.find(i)
         observation = env.reset(room, topology)
 
@@ -98,6 +92,6 @@ def test_levels():
             if done:
                 break
     
+        print(f'{id}: {info.get("all_boxes_on_target", False)}')
+        assert info.get("all_boxes_on_target", False) == True
         # env.close()
-
-    assert info.get("all_boxes_on_target", False) == True
