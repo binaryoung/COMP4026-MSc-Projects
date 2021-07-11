@@ -1,5 +1,5 @@
 import sys
-sys.path.append("./tests/gym-sokoban")
+sys.path.append("./tests/gym_sokoban")
 import hashlib
 from os import listdir
 import gym

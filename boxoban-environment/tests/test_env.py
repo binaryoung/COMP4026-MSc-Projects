@@ -1,5 +1,5 @@
 import sys
-sys.path.append("./tests/gym-sokoban")
+sys.path.append("./tests/gym_sokoban")
 sys.path.append("./src")
 import numpy as np
 import gym

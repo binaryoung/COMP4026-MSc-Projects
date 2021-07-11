@@ -137,7 +137,7 @@ class BoxobanEnvironment:
         player = np.zeros((10, 10))
         player_on_target = np.zeros((10, 10))
 
-        for i,row in enumerate(self.room):
+        for i, row in enumerate(self.room):
             for j, state in enumerate(row):
                 if state == 0:
                     wall[i, j] = 1
@@ -163,8 +163,3 @@ class BoxobanEnvironment:
             player,
             player_on_target,
         ), axis=0)
-
-
-
-
-
