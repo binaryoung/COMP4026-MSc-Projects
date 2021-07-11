@@ -6,6 +6,7 @@ import gym
 import gym_sokoban
 import pandas as pd
 import matplotlib.pyplot as plt
+import time
 
 
 def build_levels():
@@ -25,13 +26,6 @@ def build_levels():
     
     return levels
 
-# df = pd.DataFrame(levels, columns=['id', 'score', 'trajectory', 'steps', 'hash', 'room'])
-# print(df["score"].describe())
-# print(df["steps"].describe())
-# df["score"].plot.hist(bins=100)
-# plt.show()
-
-
 def test_levels():
     env = gym.make('Boxoban-Train-v0')
     env.set_maxsteps(1000)
@@ -43,11 +37,23 @@ def test_levels():
         observation = env.reset(room)
 
         for action in trajectory:
+            # env.render(mode='human')
+            # time.sleep(0.3)
+
             observation, reward, done, info = env.step(action+1)
 
             if done:
+                # env.render()
                 break
         
         print(f'{id}: {info.get("all_boxes_on_target", False)}')
         assert info.get("all_boxes_on_target", False) == True
         # env.close()
+
+if __name__ == "__main__":
+    levels = build_levels()
+    df = pd.DataFrame(levels, columns=['id', 'score', 'trajectory', 'steps', 'hash', 'room'])
+    print(df["score"].describe())
+    print(df["steps"].describe())
+    df["score"].plot.hist(bins=100)
+    plt.show()

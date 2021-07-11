@@ -4,7 +4,6 @@ sys.path.append("./src")
 import numpy as np
 import gym
 import gym_sokoban
-import pytest
 import boxoban_level_collection as collection
 from boxoban_environment import BoxobanEnvironment
 
@@ -20,7 +19,6 @@ def test_environment():
         env = BoxobanEnvironment(room.copy(), topology.copy())
         observation = env.room
 
-        # print(gym_observation.astype("uint8"), convert_state(observation))
         assert np.array_equal(gym_observation.astype("uint8"), convert_state(observation)) == True
 
         for action in trajectory:
@@ -48,3 +46,40 @@ def convert_state(state):
     room[state == 6] = 5
 
     return room
+
+def run_gym_levels(number):
+    env = gym.make('Boxoban-Train-v0')
+    env.set_maxsteps(500)
+
+    for i in range(number):
+        (id, score, trajectory, room, topology) = collection.find(i)
+        observation = env.reset(room, topology)
+
+        for action in trajectory:
+            observation, reward, done, info = env.step(action+1)
+
+            if done:
+                break
+
+        assert info.get("all_boxes_on_target", False) == True
+
+def run_env_levels(number):
+    for i in range(number):
+        (id, score, trajectory, room, topology) = collection.find(i)
+        env = BoxobanEnvironment(room, topology)
+
+        for action in trajectory:
+            observation, reward, done, info = env.step(action)
+
+            if done:
+                break
+        
+        assert info["finished"] == True
+
+def test_gym_performace(benchmark):
+    benchmark(run_gym_levels, 2)
+
+
+def test_env_performace(benchmark):
+    benchmark(run_env_levels, 2)
+

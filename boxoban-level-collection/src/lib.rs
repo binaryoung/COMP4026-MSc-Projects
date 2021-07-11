@@ -57,23 +57,28 @@ fn boxoban_level_collection(_py: Python, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
-#[test]
-fn test_collection() {
-    use std::time::Instant;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_collection() {
+        use std::time::Instant;
 
-    let now = Instant::now();
-    (0..10000).for_each(|_| {
-        COLLECTION.range(16, 1593);
-    });
-    dbg!(now.elapsed());
+        let now = Instant::now();
+        (0..10000).for_each(|_| {
+            COLLECTION.range(16, 1593);
+        });
+        dbg!(now.elapsed());
 
-    let now = Instant::now();
-    (0..10000).for_each(|_| {
-        COLLECTION.random();
-    });
-    dbg!(now.elapsed());
+        let now = Instant::now();
+        (0..10000).for_each(|_| {
+            COLLECTION.random();
+        });
+        dbg!(now.elapsed());
 
-    dbg!(COLLECTION.range(13, 15));
-    dbg!(COLLECTION.find(0));
-    dbg!(COLLECTION.random());
+        dbg!(COLLECTION.range(13, 15));
+        dbg!(COLLECTION.find(0));
+        dbg!(COLLECTION.random());
+    }
 }
+

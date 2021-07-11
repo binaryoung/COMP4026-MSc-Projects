@@ -5,11 +5,11 @@ use rand::prelude::*;
 use rayon::prelude::*;
 use std::cell::RefCell;
 use std::cmp::min;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap,VecDeque};
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::time::Instant;
 use std::vec;
+
 
 type Room = Array2<i32>;
 
@@ -215,6 +215,51 @@ impl Level {
         });
     }
 
+    fn sublevels(&self) -> Vec<Level> {
+        (0usize..=7).filter_map(|action| {
+            let level = self.reserve_move(action);
+
+            if level.validate() == true {
+                Some(level)
+            } else{ 
+                None
+            }
+        }).collect()
+    }
+
+    fn breadth_first_search(&self) {
+        let mut queue = VecDeque::with_capacity(100000);
+
+        self.validate();
+        queue.push_back(self.clone());
+
+        while let Some(level) = queue.pop_front() {
+            level.sublevels().into_iter().for_each(|level| queue.push_back(level));
+        }
+    }
+
+    fn validate(&self) -> bool {
+        let state_number = EXPLORED_STATES.with(|states| states.borrow().len());
+
+        if self.depth > 300
+            || state_number >= 1000000
+            || EXPLORED_STATES.with(|states| states.borrow().contains(&self.room))
+        {
+            return false;
+        }
+
+        EXPLORED_STATES.with(|states| states.borrow_mut().insert(self.room.clone()));
+
+        BEST_LEVEL.with(|level| {
+            let mut level = level.borrow_mut();
+            if self.score > level.score {
+                *level = self.clone();
+            }
+        });
+
+        true
+    }
+
     fn reserve_move(&self, action: usize) -> Self {
         let mut level = self.clone();
 
@@ -344,7 +389,13 @@ fn generate_level() -> Level {
             continue;
         }
 
-        level.unwrap().depth_first_search();
+        let level = level.unwrap();
+        
+        //  depth first search
+        // level.depth_first_search();
+
+        //  breadth first search
+        level.breadth_first_search();
 
         let mut level = BEST_LEVEL.with(|level| level.borrow().clone());
 
@@ -378,10 +429,27 @@ fn write_one_thousand_levels(index: usize) {
 }
 
 fn main() {
-    // let now = Instant::now();
     // (0..5).into_par_iter().for_each(|i| {
     //     write_one_thousand_levels(i);
     // });
-    // dbg!(now.elapsed());
-    dbg!(generate_level());
+    // dbg!(generate_level());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+    #[test]
+    fn it_works() {
+        dbg!(generate_level());
+    }
+
+    #[test]
+    fn performance() {
+        let now = Instant::now();
+        (0..100).for_each(|_| {
+            generate_level();
+        });
+        dbg!(now.elapsed());
+    }
 }
