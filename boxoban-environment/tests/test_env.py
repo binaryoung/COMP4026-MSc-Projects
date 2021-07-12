@@ -77,9 +77,9 @@ def run_env_levels(number):
         assert info["finished"] == True
 
 def test_gym_performace(benchmark):
-    benchmark(run_gym_levels, 2)
+    benchmark(run_gym_levels, 5)
 
 
 def test_env_performace(benchmark):
-    benchmark(run_env_levels, 2)
+    benchmark(run_env_levels, 5)
 
