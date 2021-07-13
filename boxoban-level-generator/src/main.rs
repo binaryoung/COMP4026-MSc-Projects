@@ -215,6 +215,17 @@ impl Level {
         });
     }
 
+    fn breadth_first_search(&self) {
+        let mut queue = VecDeque::with_capacity(100000);
+
+        self.validate();
+        queue.push_back(self.clone());
+
+        while let Some(level) = queue.pop_front() {
+            level.sublevels().into_iter().for_each(|level| queue.push_back(level));
+        }
+    }
+
     fn sublevels(&self) -> Vec<Level> {
         (0usize..=7).filter_map(|action| {
             let level = self.reserve_move(action);
@@ -225,17 +236,6 @@ impl Level {
                 None
             }
         }).collect()
-    }
-
-    fn breadth_first_search(&self) {
-        let mut queue = VecDeque::with_capacity(100000);
-
-        self.validate();
-        queue.push_back(self.clone());
-
-        while let Some(level) = queue.pop_front() {
-            level.sublevels().into_iter().for_each(|level| queue.push_back(level));
-        }
     }
 
     fn validate(&self) -> bool {
@@ -429,9 +429,9 @@ fn write_one_thousand_levels(index: usize) {
 }
 
 fn main() {
-    // (0..5).into_par_iter().for_each(|i| {
-    //     write_one_thousand_levels(i);
-    // });
+    (0..500).into_par_iter().for_each(|i| {
+        write_one_thousand_levels(i);
+    });
     // dbg!(generate_level());
 }
 

@@ -35,7 +35,7 @@ class BoxobanEnvironment:
     steps = 0
     max_steps = 500
 
-    reward_per_step = -0.1
+    reward_per_step = -0.01
     reward_box_on_target = 1
     reward_box_off_target = -1
     reward_finished = 10
