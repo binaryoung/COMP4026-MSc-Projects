@@ -55,5 +55,6 @@ if __name__ == "__main__":
     df = pd.DataFrame(levels, columns=['id', 'score', 'trajectory', 'steps', 'hash', 'room'])
     print(df["score"].describe())
     print(df["steps"].describe())
+    print(df[df.duplicated(["hash"], keep="first")].describe())
     df["score"].plot.hist(bins=100)
     plt.show()
