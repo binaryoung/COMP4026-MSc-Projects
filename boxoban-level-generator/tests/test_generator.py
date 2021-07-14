@@ -56,5 +56,6 @@ if __name__ == "__main__":
     print(df["score"].describe())
     print(df["steps"].describe())
     print(df[df.duplicated(["hash"], keep="first")].describe())
-    df["score"].plot.hist(bins=100)
+    score = df["score"]
+    score[score <= 250].plot.hist(bins=20)
     plt.show()

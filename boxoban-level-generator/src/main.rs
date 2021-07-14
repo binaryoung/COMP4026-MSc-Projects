@@ -429,7 +429,7 @@ fn write_one_thousand_levels(index: usize) {
 }
 
 fn main() {
-    (0..500).into_par_iter().for_each(|i| {
+    (0..1000).into_par_iter().for_each(|i| {
         write_one_thousand_levels(i);
     });
     // dbg!(generate_level());
