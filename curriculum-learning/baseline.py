@@ -265,7 +265,7 @@ def train():
 
         print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step}: {reward:.2f}")
 
-        if update % 5e5 == 0:
+        if step % 5e5 == 0:
             fig = log["average_reward"].plot().get_figure()
             fig.savefig(f"{save_path}/plot/{step}.png")
             copy_tree("./runs", f"{save_path}/runs")
