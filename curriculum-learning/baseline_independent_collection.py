@@ -44,17 +44,10 @@ class PPO(nn.Module):
 
         return actor, critic
             
-def collection_worker(workers):
+
+def collection_worker(queue):
     while True:
-        for worker in workers:
-            cmd, data = worker.recv()
-            if cmd == 'random':
-                worker.send(collection.random())
-            elif cmd == 'close':
-                worker.close()
-                break
-            else:
-                raise NotImplementedError
+        queue.put(collection.random())
 
 def worker(master, collection):
     while True:
@@ -62,14 +55,12 @@ def worker(master, collection):
         if cmd == 'step':
             observation, reward, done, info = env.step(data)
             if done:
-                collection.send(('random', None))
-                (id, score, trajectory, room, topology) = collection.recv()
+                (id, score, trajectory, room, topology) = collection.get()
                 env = BoxobanEnvironment(room, topology)
                 observation = env.observation
             master.send((observation, reward, done, info))
         elif cmd == 'reset':
-            collection.send(('random', None))
-            (id, score, trajectory, room, topology) = collection.recv()
+            (id, score, trajectory, room, topology) = collection.get()
             env = BoxobanEnvironment(room, topology)
             master.send(env.observation)
         elif cmd == 'close':
@@ -86,15 +77,15 @@ class ParallelEnv:
 
         self.master_ends, worker_ends = zip(*[mp.Pipe() for _ in range(n_workers)])
 
-        collection_master_ends, collection_worker_ends = zip(*[mp.Pipe() for _ in range(n_workers)])
+        queue = mp.Queue(n_workers)
 
-        for worker_end, collection_worker_end in zip(worker_ends, collection_worker_ends):
-            p = mp.Process(target=worker, args=(worker_end, collection_worker_end))
+        for worker_end in worker_ends:
+            p = mp.Process(target=worker, args=(worker_end, queue))
             p.daemon = True
             p.start()
             self.workers.append(p)
 
-        p = mp.Process(target=collection_worker, args=(collection_master_ends, ))
+        p = mp.Process(target=collection_worker, args=(queue, ))
         p.daemon = True
         p.start()
         self.collection = p
@@ -118,7 +109,7 @@ class ParallelEnv:
             master_end.send(('close', None))
         for worker in self.workers:
             worker.join()
-        self.collection.join()
+        # self.collection.join()
 
     def sample(self, model, steps, gamma, lamda):
         states = torch.zeros((self.n_workers, steps, 7, 10, 10), dtype=torch.float32, device=device)
@@ -187,7 +178,7 @@ def train():
     max_grad_norm = 0.5
 
     total_steps = 1e8  # number of timesteps
-    n_envs = 4  # number of environment copies simulated in parallel
+    n_envs = 2  # number of environment copies simulated in parallel
     n_sample_steps = 128  # number of steps of the environment per sample
     n_mini_batches = 4  # number of training minibatches per update 
                                      # For recurrent policies, should be smaller or equal than number of environments run in parallel.

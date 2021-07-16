@@ -1,5 +1,7 @@
 import math
 from datetime import datetime
+from distutils.dir_util import copy_tree
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,8 +11,10 @@ import torch.multiprocessing as mp
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import pandas as pd
+
 import boxoban_level_collection as collection
 from boxoban_environment import BoxobanEnvironment
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -201,6 +205,8 @@ def train():
     mini_batch_size = batch_size // n_mini_batches
     n_updates = math.ceil(total_steps / batch_size)
 
+    save_path = "./data"
+
     assert (batch_size % n_mini_batches == 0)
 
     envs = ParallelEnv(n_envs)
@@ -245,6 +251,15 @@ def train():
         writer.add_scalar('Average reward', average_reward, update)
 
         print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step}: {reward:.2f}")
+
+        if update % 5e5 == 0:
+            fig = log["average_reward"].plot().get_figure()
+            fig.savefig(f"{save_path}/plot/{step}.png")
+            copy_tree("./runs", f"{save_path}/runs")
+
+            torch.save(model.state_dict(), f"{save_path}/model/{step}.pkl")
+            log.to_csv(f"{save_path}/data/{step}.csv", index=False, header=True)
+
 
     envs.close()
 
