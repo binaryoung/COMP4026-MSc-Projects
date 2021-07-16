@@ -274,6 +274,12 @@ def train():
             log.to_csv(f"{save_path}/data/{step}.csv", index=False, header=True)
 
 
+    fig = log["average_reward"].plot().get_figure()
+    fig.savefig(f"{save_path}/plot/{step}.png")
+    copy_tree("./runs", f"{save_path}/runs")
+    torch.save(model.state_dict(), f"{save_path}/model/{step}.pkl")
+    log.to_csv(f"{save_path}/data/{step}.csv", index=False, header=True)
+
     envs.close()
 
 if __name__ == '__main__':
