@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import pandas as pd
 
-import boxoban_level_collection as collection
+import boxoban_level_collection as levelCollection
 from boxoban_environment import BoxobanEnvironment
 
 
@@ -50,23 +50,29 @@ class PPO(nn.Module):
         critic = self.critic_head(x)
 
         return actor, critic
-            
-def worker(master):
+
+
+def collection_worker(queue):
+    while True:
+        queue.put(levelCollection.random())
+
+def worker(master, collection):
     while True:
         cmd, data = master.recv()
         if cmd == 'step':
             observation, reward, done, info = env.step(data)
             if done:
-                (id, score, trajectory, room, topology) = collection.random()
+                (id, score, trajectory, room, topology) = collection.get()
                 env = BoxobanEnvironment(room, topology)
                 observation = env.observation
             master.send((observation, reward, done, info))
         elif cmd == 'reset':
-            (id, score, trajectory, room, topology) = collection.random()
+            (id, score, trajectory, room, topology) = collection.get()
             env = BoxobanEnvironment(room, topology)
             master.send(env.observation)
         elif cmd == 'close':
             master.close()
+            collection.close()
             break
         else:
             raise NotImplementedError
@@ -78,11 +84,18 @@ class ParallelEnv:
 
         self.master_ends, worker_ends = zip(*[mp.Pipe() for _ in range(n_workers)])
 
+        queue = mp.Queue(n_workers)
+
         for worker_end in worker_ends:
-            p = mp.Process(target=worker, args=(worker_end,))
+            p = mp.Process(target=worker, args=(worker_end, queue))
             p.daemon = True
             p.start()
             self.workers.append(p)
+
+        p = mp.Process(target=collection_worker, args=(queue, ))
+        p.daemon = True
+        p.start()
+        self.collection = p
 
     def reset(self):
         for master_end in self.master_ends:
