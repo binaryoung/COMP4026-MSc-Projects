@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 use pyo3::exceptions::PyException;
 
-static COLLECTION_BYTES: &'static [u8] = include_bytes!(r"..\levels\collection.bin");
+static COLLECTION_BYTES: &'static [u8] = include_bytes!(r"../levels/collection.bin");
 static COLLECTION: Lazy<Collection> = Lazy::new(|| Collection::load_from_bytes(COLLECTION_BYTES).unwrap());
 
 type LevelPy<'py> = (usize, usize, Vec<u8>, &'py PyArray2<u8>, &'py PyArray2<u8>);

@@ -116,7 +116,7 @@ impl Collection {
             .filter_map(|(index, file)| {
                 let path = file.unwrap().path();
 
-                if path.to_str().unwrap() != r"levels\collection.bin" {
+                if path.to_str().unwrap() != r"levels/collection.bin" {
                     Some(parse_file(index, path))
                 } else {
                     None

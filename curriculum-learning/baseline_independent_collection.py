@@ -1,14 +1,11 @@
 import math
-from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
 import torch.multiprocessing as mp
-from torch.utils.tensorboard import SummaryWriter
 import numpy as np
-import pandas as pd
 import boxoban_level_collection as collection
 from boxoban_environment import BoxobanEnvironment
 
@@ -47,22 +44,37 @@ class PPO(nn.Module):
 
         return actor, critic
             
-def worker(master):
+def collection_worker(workers):
+    while True:
+        for worker in workers:
+            cmd, data = worker.recv()
+            if cmd == 'random':
+                worker.send(collection.random())
+            elif cmd == 'close':
+                worker.close()
+                break
+            else:
+                raise NotImplementedError
+
+def worker(master, collection):
     while True:
         cmd, data = master.recv()
         if cmd == 'step':
             observation, reward, done, info = env.step(data)
             if done:
-                (id, score, trajectory, room, topology) = collection.random()
+                collection.send(('random', None))
+                (id, score, trajectory, room, topology) = collection.recv()
                 env = BoxobanEnvironment(room, topology)
                 observation = env.observation
             master.send((observation, reward, done, info))
         elif cmd == 'reset':
-            (id, score, trajectory, room, topology) = collection.random()
+            collection.send(('random', None))
+            (id, score, trajectory, room, topology) = collection.recv()
             env = BoxobanEnvironment(room, topology)
             master.send(env.observation)
         elif cmd == 'close':
             master.close()
+            collection.close()
             break
         else:
             raise NotImplementedError
@@ -74,11 +86,18 @@ class ParallelEnv:
 
         self.master_ends, worker_ends = zip(*[mp.Pipe() for _ in range(n_workers)])
 
-        for worker_end in worker_ends:
-            p = mp.Process(target=worker, args=(worker_end,))
+        collection_master_ends, collection_worker_ends = zip(*[mp.Pipe() for _ in range(n_workers)])
+
+        for worker_end, collection_worker_end in zip(worker_ends, collection_worker_ends):
+            p = mp.Process(target=worker, args=(worker_end, collection_worker_end))
             p.daemon = True
             p.start()
             self.workers.append(p)
+
+        p = mp.Process(target=collection_worker, args=(collection_master_ends, ))
+        p.daemon = True
+        p.start()
+        self.collection = p
 
     def reset(self):
         for master_end in self.master_ends:
@@ -99,6 +118,7 @@ class ParallelEnv:
             master_end.send(('close', None))
         for worker in self.workers:
             worker.join()
+        self.collection.join()
 
     def sample(self, model, steps, gamma, lamda):
         states = torch.zeros((self.n_workers, steps, 7, 10, 10), dtype=torch.float32, device=device)
@@ -155,35 +175,10 @@ class ParallelEnv:
         normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         targets = advantages + values
 
-        total_reward = rewards.sum().item()
-
-        return states, values, actions, log_probabilities, advantages, normalized_advantages, targets, total_reward
-
-def compute_loss(model, states, values, actions, log_probabilities, advantages, normalized_advantages, targets, clip_range,  value_coefficient, entropy_coefficient):
-    pi, v = model(states)
-    v = v.squeeze(1)
-
-    p = Categorical(pi)
-    log_actions = p.log_prob(actions)
-
-    ratio = torch.exp(log_actions - log_probabilities)
-    surrogate1 = ratio * normalized_advantages
-    surrogate2 = ratio.clamp(1-clip_range, 1+clip_range) * normalized_advantages
-    policy_loss = torch.min(surrogate1, surrogate2).mean()
-
-    clipped_values = values + (v - values).clamp(-clip_range, clip_range)
-    value_loss1 = (v - targets).square()
-    value_loss2 = (clipped_values - targets).square()
-    value_loss = 0.5 * torch.max(value_loss1, value_loss2).mean()
-
-    entropy = p.entropy().mean()
-
-    loss = -(policy_loss - value_coefficient * value_loss + entropy_coefficient * entropy)
-
-    return loss
+        return states, values, actions, log_probabilities, advantages, normalized_advantages, targets
 
 def train():
-    learning_rate = 3e-4
+    learning_rate = 1e-4
     gamma = 0.99
     lamda = 0.95
     clip_range = 0.2
@@ -192,28 +187,27 @@ def train():
     max_grad_norm = 0.5
 
     total_steps = 1e8  # number of timesteps
-    n_envs = 16  # number of environment copies simulated in parallel
+    n_envs = 4  # number of environment copies simulated in parallel
     n_sample_steps = 128  # number of steps of the environment per sample
-    n_mini_batches = 8  # number of training minibatches per update 
+    n_mini_batches = 4  # number of training minibatches per update 
                                      # For recurrent policies, should be smaller or equal than number of environments run in parallel.
     n_epochs = 4   # number of training epochs per update
     batch_size = n_envs * n_sample_steps
     mini_batch_size = batch_size // n_mini_batches
+    assert (batch_size % n_mini_batches == 0)
     n_updates = math.ceil(total_steps / batch_size)
 
-    assert (batch_size % n_mini_batches == 0)
 
     envs = ParallelEnv(n_envs)
     model  = PPO().to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    step = 0
-    log = pd.DataFrame([], columns=["time", "update", "step", "reward", "average_reward"])
-    writer = SummaryWriter()
+    steps = 0
 
     for update in range(1, n_updates+1):
 
-        states, values, actions, log_probabilities, advantages, normalized_advantages, targets, total_reward = envs.sample(model, n_sample_steps, gamma, lamda)
+        states, values, actions, log_probabilities, advantages, normalized_advantages, targets = envs.sample(
+            model, n_sample_steps, gamma, lamda)
 
         for _ in range(n_epochs):
 
@@ -230,24 +224,49 @@ def train():
                     clip_range, value_coefficient, entropy_coefficient
                 )
 
+                # for pg in optimizer.param_groups:
+                #     pg['lr'] = learning_rate
+
                 optimizer.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
                 optimizer.step()
         
-        step += batch_size
-        reward = total_reward/n_envs
-        tail_rewards = log["reward"].tail(99)
-        average_reward = (tail_rewards.sum() + reward) / (tail_rewards.count() +1)
-        log.at[update] = [datetime.now(), update, step, reward, average_reward]
-        
-        writer.add_scalar('Reward', reward, update)
-        writer.add_scalar('Average reward', average_reward, update)
+        steps += batch_size
+        print(steps)
 
-        print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step}: {reward:.2f}")
 
-    envs.close()
+def compute_loss(model, states, values, actions, log_probabilities, advantages, normalized_advantages, targets, clip_range,  value_coefficient, entropy_coefficient):
+    pi, v = model(states)
+    v = v.squeeze(1)
+
+    p = Categorical(pi)
+    log_actions = p.log_prob(actions)
+
+    ratio = torch.exp(log_actions - log_probabilities)
+    surrogate1 = ratio * normalized_advantages
+    surrogate2 = ratio.clamp(1-clip_range, 1+clip_range) * normalized_advantages
+    policy_loss = torch.min(surrogate1, surrogate2).mean()
+
+    clipped_value = values + (v - values).clamp(-clip_range, clip_range)
+    value_loss1 = (v - targets).square()
+    value_loss2 = (clipped_value - targets).square()
+    value_loss = 0.5 * torch.max(value_loss1, value_loss2).mean()
+
+    entropy_loss = p.entropy().mean()
+
+    loss = -(policy_loss - value_coefficient * value_loss + entropy_coefficient * entropy_loss)
+
+    return loss
+
 
 if __name__ == '__main__':
+    # envs = ParallelEnv(2)
+    # model = PPO().to(device)
+    # for i in range(10):
+    #     states, values, actions, log_probabilities, advantages = envs.sample( model, 128)
+    #     print(states.shape, values.shape, actions.shape, log_probabilities.shape, advantages.shape)
+    #     print(values[:5], actions[:5])
+
     train()
 
