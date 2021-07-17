@@ -8,7 +8,7 @@ import numpy as np
 from boxoban_env import BoxobanEnv
 
 from boxoban_environment import BoxobanEnvironment
-from PPO import PPO
+from ppo import PPO
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -157,7 +157,7 @@ def solve_level(model, level):
 
     return False
     
-def test_PPO():
+def test_ppo():
     levels = build_levels()
     success = []
 
@@ -174,7 +174,7 @@ def test_PPO():
 
     return success
 
-def render_PPO(id):
+def render_ppo(id):
     level = build_levels()[id]
     
     model = PPO().to(device)
@@ -184,7 +184,7 @@ def render_PPO(id):
     render_level(model, level)
 
 if __name__ == "__main__":
-    render_PPO(0)
+    render_ppo(0)
 
-    success = test_PPO()
+    success = test_ppo()
     print(len(success), success)
