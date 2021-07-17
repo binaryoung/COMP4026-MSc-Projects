@@ -8,7 +8,7 @@ import numpy as np
 from boxoban_env import BoxobanEnv
 
 from boxoban_environment import BoxobanEnvironment
-from baseline import PPO
+from PPO import PPO
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
