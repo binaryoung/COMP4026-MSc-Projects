@@ -1,5 +1,6 @@
 import math
 from datetime import datetime
+import os
 from distutils.dir_util import copy_tree
 
 import torch
@@ -217,10 +218,10 @@ def train():
     batch_size = n_envs * n_sample_steps
     mini_batch_size = batch_size // n_mini_batches
     n_updates = math.ceil(total_steps / batch_size)
+    assert (batch_size % n_mini_batches == 0)
 
     save_path = "./data"
-
-    assert (batch_size % n_mini_batches == 0)
+    [os.makedirs(f"{save_path}/{dir}") for dir in ["data", "model", "plot", "runs"] if not os.path.exists(f"{save_path}/{dir}")]
 
     envs = ParallelEnv(n_envs)
     model  = PPO().to(device)
