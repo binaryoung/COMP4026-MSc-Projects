@@ -20,6 +20,28 @@ from boxoban_environment import BoxobanEnvironment
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
+class ResidualBlock(nn.Module):
+    def __init__(self, channels):
+        super(ResidualBlock, self).__init__()
+
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1, bias=False)
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
+
+
 class PPO(nn.Module):
     def __init__(self):
         super(PPO, self).__init__()
@@ -33,6 +55,17 @@ class PPO(nn.Module):
             nn.ReLU()
         )  
 
+        self.resnet = nn.Sequential(
+            ResidualBlock(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
+            ResidualBlock(64),
+        )
+
         self.linear = nn.Sequential(
             nn.Linear(2304, 256),  # 64, 6, 6
             nn.ReLU()
@@ -43,6 +76,8 @@ class PPO(nn.Module):
 
     def forward(self, x):
         x = self.encoder(x)
+
+        x = self.resnet(x)
         x = x.view(x.size(0), -1)
 
         x = self.linear(x)
