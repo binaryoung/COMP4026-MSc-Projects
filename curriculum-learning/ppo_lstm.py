@@ -257,7 +257,7 @@ def train():
     learning_rate = 3e-4
     gamma = 0.99
     lamda = 0.95
-    clip_range = 0.2
+    clip_range = 0.1
     value_coefficient = 0.5
     entropy_coefficient = 0.01
     max_grad_norm = 0.5
