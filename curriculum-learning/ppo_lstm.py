@@ -34,18 +34,66 @@ class PPO(nn.Module):
         )  
 
         self.linear = nn.Sequential(
-            nn.Linear(2304, 256),  # 64, 6, 6
+            nn.Linear(2304, 512),  # 64, 6, 6
             nn.ReLU()
         )
+
+        self.lstm = nn.LSTM(512, 256, 1)
 
         self.actor_head = nn.Linear(256, 7)
         self.critic_head = nn.Linear(256, 1)
 
-    def forward(self, x):
+    def forward(self, x, hidden):
         x = self.encoder(x)
         x = x.view(x.size(0), -1)
 
         x = self.linear(x)
+        x = x.unsqueeze(0)
+
+        x, hidden = self.lstm(x, hidden)
+        x = x.squeeze(0)
+
+        actor = F.softmax(self.actor_head(x), dim=-1)
+        critic = self.critic_head(x)
+
+        return actor, critic, hidden
+    
+    def loss_forward(self, x, dones):
+        n_envs, n_steps = x.size(0), x.size(1)
+
+        x = x.view(-1, 7, 10, 10)
+
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)
+
+        x = self.linear(x)
+        x = x.view(n_envs, n_steps, -1)
+
+
+        done_steps = (dones == True).any(0).nonzero().squeeze(1).tolist()
+        done_steps = [-1] + done_steps + ([] if done_steps[-1] == (n_steps - 1) else [n_steps-1])
+
+        hidden = torch.zeros((1, n_envs, 256), device=device)
+        cell = torch.zeros((1, n_envs, 256), device=device)
+        done = torch.full((n_envs, ), True,  device=device)
+        rnn_outputs = []
+
+        for i in range(len(done_steps) - 1):
+            start_step = done_steps[i] + 1
+            end_step = done_steps[i+1]
+
+            hidden[:, done] = 0
+            cell[:, done] = 0
+            done = dones[:, end_step]
+
+            rnn_input = x[:, start_step: end_step+1].permute(1,0,2)
+            rnn_output, (hidden, cell) = self.lstm(rnn_input, (hidden, cell))
+            rnn_outputs.append(rnn_output.permute(1, 0, 2))
+
+        assert sum([x.size(1) for x in rnn_outputs]) == n_steps
+
+        x = torch.cat(rnn_outputs, dim=1)
+        x = x.view(n_envs * n_steps, -1)
 
         actor = F.softmax(self.actor_head(x), dim=-1)
         critic = self.critic_head(x)
@@ -132,11 +180,14 @@ class ParallelEnv:
         advantages = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
 
         observation = torch.tensor(self.reset(), device=device)
+        hidden = torch.zeros((1, self.n_workers, 256), device=device)
+        cell = torch.zeros((1, self.n_workers, 256), device=device)
 
         for t in range(steps):
             with torch.no_grad():
                 states[:, t] = observation
-                pi, v = model(observation)
+
+                pi, v, (hidden, cell) = model(observation, (hidden, cell))
                 values[:, t] = v.squeeze(1)
 
                 p = Categorical(pi)
@@ -148,8 +199,10 @@ class ParallelEnv:
             observation = torch.tensor(observation, device=device)
             rewards[:, t] = torch.tensor(reward, device=device)
             dones[:, t] = torch.tensor(done, device=device)
+            hidden[:, done] = 0
+            cell[:, done] = 0
 
-        _, last_value = model(observation)
+        _, last_value, _ = model(observation, (hidden, cell))
         last_value = last_value.detach().squeeze(1)
         last_advantage = 0
 
@@ -164,21 +217,21 @@ class ParallelEnv:
 
             last_value = values[:, t]
 
-
-        states = states.reshape(-1, 7, 10, 10)
-        values = values.reshape(-1)
-        actions = actions.reshape(-1)
-        log_probabilities = log_probabilities.reshape(-1)
-        advantages = advantages.reshape(-1)
         normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         targets = advantages + values
 
         total_reward = rewards.sum().item()
 
-        return states, values, actions, log_probabilities, advantages, normalized_advantages, targets, total_reward
+        return states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, total_reward
 
-def compute_loss(model, states, values, actions, log_probabilities, advantages, normalized_advantages, targets, clip_range,  value_coefficient, entropy_coefficient):
-    pi, v = model(states)
+def compute_loss(model, states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, clip_range,  value_coefficient, entropy_coefficient):
+    values = values.view(-1)
+    actions = actions.view(-1)
+    log_probabilities = log_probabilities.view(-1)
+    normalized_advantages = normalized_advantages.view(-1)
+    targets = targets.view(-1)
+    
+    pi, v = model.loss_forward(states, dones)
     v = v.squeeze(1)
 
     p = Categorical(pi)
@@ -216,9 +269,9 @@ def train():
                                      # For recurrent policies, should be smaller or equal than number of environments run in parallel.
     n_epochs = 4   # number of training epochs per update
     batch_size = n_envs * n_sample_steps
-    mini_batch_size = batch_size // n_mini_batches
+    n_envs_per_batch = n_envs // n_mini_batches
     n_updates = math.ceil(total_steps / batch_size)
-    assert (batch_size % n_mini_batches == 0)
+    assert (n_envs % n_mini_batches == 0)
 
     save_path = "./data"
     [os.makedirs(f"{save_path}/{dir}") for dir in ["data", "model", "plot", "runs"] if not os.path.exists(f"{save_path}/{dir}")]
@@ -233,20 +286,21 @@ def train():
 
     for update in range(1, n_updates+1):
 
-        states, values, actions, log_probabilities, advantages, normalized_advantages, targets, total_reward = envs.sample(model, n_sample_steps, gamma, lamda)
+        states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, total_reward = envs.sample(model, n_sample_steps, gamma, lamda)
 
         for _ in range(n_epochs):
 
-            indexes = torch.randperm(batch_size)
+            indexes = torch.randperm(n_envs)
 
-            for i in range(0, batch_size, mini_batch_size):
-                mini_batch_indexes = indexes[i: i + mini_batch_size]
+            for i in range(0, n_envs, n_envs_per_batch):
+                mini_batch_indexes = indexes[i: i + n_envs_per_batch]
 
                 loss = compute_loss(
                     model, 
                     states[mini_batch_indexes], values[mini_batch_indexes], 
                     actions[mini_batch_indexes], log_probabilities[mini_batch_indexes], 
                     advantages[mini_batch_indexes], normalized_advantages[mini_batch_indexes], targets[mini_batch_indexes],
+                    dones[mini_batch_indexes],
                     clip_range, value_coefficient, entropy_coefficient
                 )
 
