@@ -165,11 +165,11 @@ class ParallelEnv:
             last_value = values[:, t]
 
 
-        states = states.reshape(-1, 7, 10, 10)
-        values = values.reshape(-1)
-        actions = actions.reshape(-1)
-        log_probabilities = log_probabilities.reshape(-1)
-        advantages = advantages.reshape(-1)
+        states = states.view(-1, 7, 10, 10)
+        values = values.view(-1)
+        actions = actions.view(-1)
+        log_probabilities = log_probabilities.view(-1)
+        advantages = advantages.view(-1)
         normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         targets = advantages + values
 
