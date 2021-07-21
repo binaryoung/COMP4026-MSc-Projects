@@ -10,6 +10,7 @@ from boxoban_env import BoxobanEnv
 from boxoban_environment import BoxobanEnvironment
 from ppo import PPO
 from ppo_lstm import PPO as PPO_LSTM
+from ppo_resnet import PPO as PPO_ResNet
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -137,7 +138,7 @@ def render_level(model, level):
 
     env.close()
 
-def ppo_solve_level(model, level):
+def solve_level(model, level):
     id, room, topology = level
 
     for i in range(10):
@@ -158,31 +159,6 @@ def ppo_solve_level(model, level):
 
     return False
 
-def test_ppo():
-    levels = build_levels()
-    success = []
-
-    model = PPO().to(device)
-    model.load_state_dict(torch.load("models/ppo.pkl"))
-    model.eval()
-
-    for level in levels:
-        id, room, topology = level
-        if ppo_solve_level(model, level):
-            success.append(id)
-        print(f"Test level {id}")
-
-
-    return success
-
-def render_ppo(id):
-    level = build_levels()[id]
-
-    model = PPO().to(device)
-    model.load_state_dict(torch.load("models/ppo.pkl"))
-    model.eval()
-
-    render_level(model, level)
 
 def ppo_lstm_solve_level(model, level):
     id, room, topology = level
@@ -207,6 +183,34 @@ def ppo_lstm_solve_level(model, level):
 
     return False
 
+
+def test_ppo():
+    levels = build_levels()
+    success = []
+
+    model = PPO().to(device)
+    model.load_state_dict(torch.load("models/ppo.pkl"))
+    model.eval()
+
+    for level in levels:
+        id, room, topology = level
+        if solve_level(model, level):
+            success.append(id)
+        print(f"Test level {id}")
+
+
+    return success
+
+def render_ppo(id):
+    level = build_levels()[id]
+
+    model = PPO().to(device)
+    model.load_state_dict(torch.load("models/ppo.pkl"))
+    model.eval()
+
+    render_level(model, level)
+
+
 def test_ppo_lstm():
     levels = build_levels()
     success = []
@@ -224,6 +228,23 @@ def test_ppo_lstm():
     return success
 
 
+def test_ppo_resnet():
+    levels = build_levels()
+    success = []
+
+    model = PPO_ResNet().to(device)
+    model.load_state_dict(torch.load("models/ppo-resnet.pkl"))
+    model.eval()
+
+    for level in levels:
+        id, room, topology = level
+        if solve_level(model, level):
+            success.append(id)
+        print(f"Test level {id}")
+
+    return success
+
+
 if __name__ == "__main__":
     render_ppo(0)
 
@@ -231,4 +252,7 @@ if __name__ == "__main__":
     print(len(success), success)
 
     success = test_ppo_lstm()
+    print(len(success), success)
+
+    success = test_ppo_resnet()
     print(len(success), success)
