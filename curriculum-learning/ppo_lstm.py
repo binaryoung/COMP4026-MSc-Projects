@@ -90,7 +90,7 @@ class PPO(nn.Module):
             rnn_output, (hidden, cell) = self.lstm(rnn_input, (hidden, cell))
             rnn_outputs.append(rnn_output.permute(1, 0, 2))
 
-        assert sum([x.size(1) for x in rnn_outputs]) == n_steps
+        # assert sum([x.size(1) for x in rnn_outputs]) == n_steps
 
         x = torch.cat(rnn_outputs, dim=1)
         x = x.view(n_envs * n_steps, -1)
