@@ -112,7 +112,7 @@ class PPO(nn.Module):
             nn.ReLU()
         )  
 
-        self.convlstm = ConvLSTM(64, 32, (6, 6), 3, num_layers=1)
+        self.convlstm = ConvLSTM((64,32,32), 32, (6, 6), 3, num_layers=3)
 
         self.linear = nn.Sequential(
             nn.Linear(1152, 256),  # 32, 6, 6
@@ -148,8 +148,8 @@ class PPO(nn.Module):
         done_steps = (dones == True).any(0).nonzero().squeeze(1).tolist()
         done_steps = [-1] + done_steps + ([] if done_steps[-1] == (n_steps - 1) else [n_steps-1])
 
-        hidden = torch.zeros((1, n_envs, 32, 6, 6), device=device)
-        cell = torch.zeros((1, n_envs, 32, 6, 6), device=device)
+        hidden = torch.zeros((3, n_envs, 32, 6, 6), device=device)
+        cell = torch.zeros((3, n_envs, 32, 6, 6), device=device)
         done = torch.full((n_envs, ), True,  device=device)
         rnn_outputs = []
 
@@ -258,8 +258,8 @@ class ParallelEnv:
         advantages = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
 
         observation = torch.tensor(self.reset(), device=device)
-        hidden = torch.zeros((1, self.n_workers, 32, 6, 6), device=device)
-        cell = torch.zeros((1, self.n_workers, 32, 6, 6), device=device)
+        hidden = torch.zeros((3, self.n_workers, 32, 6, 6), device=device)
+        cell = torch.zeros((3, self.n_workers, 32, 6, 6), device=device)
 
         for t in range(steps):
             with torch.no_grad():
@@ -343,7 +343,7 @@ def train():
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
     n_sample_steps = 128  # number of steps of the environment per sample
-    n_mini_batches = 16  # number of training minibatches per update 
+    n_mini_batches = 8  # number of training minibatches per update 
                                      # For recurrent policies, should be smaller or equal than number of environments run in parallel.
     n_epochs = 4   # number of training epochs per update
     batch_size = n_envs * n_sample_steps
