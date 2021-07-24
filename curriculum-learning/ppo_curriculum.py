@@ -2,6 +2,8 @@ import math
 from datetime import datetime
 import os
 from distutils.dir_util import copy_tree
+import random
+from collections import deque
 
 import torch
 import torch.nn as nn
@@ -53,9 +55,13 @@ class PPO(nn.Module):
         return actor, critic
 
 
-def collection_worker(queue):
+def collection_worker(queue, curriculum_cursor, curriculum_span):
     while True:
-        queue.put(levelCollection.random())
+        cursor = curriculum_cursor.value
+        revise_range = (16, max(cursor, 16+curriculum_span))
+        learn_range = (cursor, min(cursor+curriculum_span, 250))
+        range = random.choices([revise_range, learn_range], k=1, weights=[0.2, 0.8])[0]
+        queue.put(levelCollection.range(*range))
 
 def worker(master, collection):
     while True:
@@ -79,7 +85,7 @@ def worker(master, collection):
             raise NotImplementedError
 
 class ParallelEnv:
-    def __init__(self, n_workers):
+    def __init__(self, n_workers, curriculum_cursor, curriculum_span):
         self.n_workers = n_workers
         self.workers = []
 
@@ -93,7 +99,7 @@ class ParallelEnv:
             p.start()
             self.workers.append(p)
 
-        p = mp.Process(target=collection_worker, args=(queue, ))
+        p = mp.Process(target=collection_worker, args=(queue, curriculum_cursor, curriculum_span))
         p.daemon = True
         p.start()
         self.collection = p
@@ -220,15 +226,20 @@ def train():
     n_updates = math.ceil(total_steps / batch_size)
     assert (batch_size % n_mini_batches == 0)
 
+    curriculum_cursor = mp.Value('i', 16)
+    curriculum_rewards = deque(maxlen=50)
+    curriculum_span = 20
+    curriculum_criterion = 10
+
     save_path = "./data"
     [os.makedirs(f"{save_path}/{dir}") for dir in ["data", "model", "plot", "runs"] if not os.path.exists(f"{save_path}/{dir}")]
 
-    envs = ParallelEnv(n_envs)
+    envs = ParallelEnv(n_envs, curriculum_cursor, curriculum_span)
     model  = PPO().to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     step = 0
-    log = pd.DataFrame([], columns=["time", "update", "step", "reward", "average_reward"])
+    log = pd.DataFrame([], columns=["time", "update", "step", "reward", "average_reward", "curriculum_cursor"])
     writer = SummaryWriter()
 
     for update in range(1, n_updates+1):
@@ -257,14 +268,23 @@ def train():
 
         step += batch_size
         reward = total_reward/n_envs
+        curriculum_rewards.append(reward)
         tail_rewards = log["reward"].tail(99)
         average_reward = (tail_rewards.sum() + reward) / (tail_rewards.count() +1)
-        log.at[update] = [datetime.now(), update, step, reward, average_reward]
+        cursor = curriculum_cursor.value
+        log.at[update] = [datetime.now(), update, step, reward, average_reward, cursor]
         
         writer.add_scalar('Reward', reward, update)
         writer.add_scalar('Average reward', average_reward, update)
+        writer.add_scalar('Curriculum cursor', cursor, update)
 
-        print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step}: {reward:.2f}")
+        print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step},({cursor},{cursor+curriculum_span}): {reward:.2f}")
+
+        if update % 10 == 0 and len(curriculum_rewards) >= 30:
+            curriculum_average_reward = sum(curriculum_rewards) / len(curriculum_rewards)
+            if curriculum_average_reward >= curriculum_criterion:
+                curriculum_cursor.value = min(cursor+curriculum_span, 250-curriculum_span)
+                curriculum_rewards.clear()
 
         if update % 122 == 0:
             fig = log["average_reward"].plot().get_figure()
