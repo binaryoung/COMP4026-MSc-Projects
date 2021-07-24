@@ -343,7 +343,7 @@ def train():
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
     n_sample_steps = 128  # number of steps of the environment per sample
-    n_mini_batches = 16  # number of training minibatches per update 
+    n_mini_batches = 8  # number of training minibatches per update 
                                      # For recurrent policies, should be smaller or equal than number of environments run in parallel.
     n_epochs = 4   # number of training epochs per update
     batch_size = n_envs * n_sample_steps
