@@ -11,6 +11,7 @@ from boxoban_environment import BoxobanEnvironment
 from ppo import PPO
 from ppo_lstm import PPO as PPO_LSTM
 from ppo_resnet import PPO as PPO_ResNet
+from ppo_convlstm import PPO as PPO_ConvLSTM
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -183,6 +184,29 @@ def ppo_lstm_solve_level(model, level):
 
     return False
 
+def ppo_convlstm_solve_level(model, level):
+    id, room, topology = level
+
+    for i in range(10):
+        env = BoxobanEnvironment(room.copy(), topology.copy())
+        observation = env.observation
+        hidden = torch.zeros((1, 1, 32, 6, 6), device=device)
+        cell = torch.zeros((1, 1, 32, 6, 6), device=device)
+
+        while True:
+            with torch.no_grad():
+                pi, _, (hidden, cell) = model(torch.tensor(observation, device=device).unsqueeze(0), (hidden, cell))
+                p = Categorical(pi)
+                observation, reward, done, info = env.step(p.sample())
+
+            if done:
+                if info["finished"]:
+                    return True
+
+                break
+
+    return False
+
 
 def test_ppo():
     levels = build_levels()
@@ -244,6 +268,21 @@ def test_ppo_resnet():
 
     return success
 
+def test_ppo_convlstm():
+    levels = build_levels()
+    success = []
+
+    model = PPO_ConvLSTM().to(device)
+    model.load_state_dict(torch.load("models/ppo-convlstm.pkl"))
+    model.eval()
+
+    for level in levels:
+        id, room, topology = level
+        if ppo_convlstm_solve_level(model, level):
+            success.append(id)
+        print(f"Test level {id}")
+
+    return success
 
 if __name__ == "__main__":
     render_ppo(0)
@@ -255,4 +294,7 @@ if __name__ == "__main__":
     print(len(success), success)
 
     success = test_ppo_resnet()
+    print(len(success), success)
+
+    success = test_ppo_convlstm()
     print(len(success), success)
