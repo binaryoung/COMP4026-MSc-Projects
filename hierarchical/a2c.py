@@ -203,12 +203,8 @@ def train():
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
     n_sample_steps = 128  # number of steps of the environment per sample
-    n_mini_batches = 1  # number of training minibatches per update 
-                                     # For recurrent policies, should be smaller or equal than number of environments run in parallel.
     batch_size = n_envs * n_sample_steps
-    n_envs_per_batch = n_envs // n_mini_batches
     n_updates = math.ceil(total_steps / batch_size)
-    assert (n_envs % n_mini_batches == 0)
 
     save_path = "./data"
     [os.makedirs(f"{save_path}/{dir}") for dir in ["data", "model", "plot", "runs"] if not os.path.exists(f"{save_path}/{dir}")]
@@ -225,22 +221,17 @@ def train():
 
         log_probabilities, advantages, normalized_advantages, entropies, total_reward = envs.sample(model, n_sample_steps, gamma, lamda)
 
-        indexes = torch.randperm(n_envs)
+        loss = compute_loss(
+            log_probabilities, 
+            advantages, normalized_advantages,
+            entropies,
+            value_coefficient, entropy_coefficient
+        )
 
-        for i in range(0, n_envs, n_envs_per_batch):
-            mini_batch_indexes = indexes[i: i + n_envs_per_batch]
-
-            loss = compute_loss(
-                log_probabilities[mini_batch_indexes], 
-                advantages[mini_batch_indexes], normalized_advantages[mini_batch_indexes],
-                entropies[mini_batch_indexes],
-                value_coefficient, entropy_coefficient
-            )
-
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
-            optimizer.step()
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+        optimizer.step()
 
         step += batch_size
         reward = total_reward/n_envs
