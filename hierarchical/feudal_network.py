@@ -378,8 +378,8 @@ def compute_loss(state_goal_similarities, log_probabilities, manager_advantages,
     manager_policy_loss = (state_goal_similarities * manager_normalized_advantages.detach()).mean()
     worker_policy_loss = (log_probabilities * worker_normalized_advantages.detach()).mean()
     
-    manager_value_loss = 0.5 * manager_advantages.square().mean()
-    worker_value_loss = 0.5 * worker_advantages.square().mean()
+    manager_value_loss = manager_advantages.square().mean()
+    worker_value_loss = worker_advantages.square().mean()
 
     entropy = entropies.mean()
 
