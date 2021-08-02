@@ -402,12 +402,8 @@ def train():
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
     n_sample_steps = 128  # number of steps of the environment per sample
-    n_mini_batches = 1  # number of training minibatches per update 
-                                     # For recurrent policies, should be smaller or equal than number of environments run in parallel.
     batch_size = n_envs * n_sample_steps
-    mini_batch_size = batch_size // n_mini_batches
     n_updates = math.ceil(total_steps / batch_size)
-    assert (batch_size % n_mini_batches == 0)
 
     save_path = "./data"
     [os.makedirs(f"{save_path}/{dir}") for dir in ["data", "model", "plot", "runs"] if not os.path.exists(f"{save_path}/{dir}")]
@@ -423,23 +419,18 @@ def train():
     for update in range(1, n_updates+1):
         state_goal_similarities, log_probabilities,  manager_advantages, worker_advantages, manager_normalized_advantages, worker_normalized_advantages, entropies, total_reward = envs.sample(model, n_sample_steps, manager_gamma, worker_gamma, manager_lamda, worker_lamda, alpha)
 
-        indexes = torch.randperm(batch_size)
+        loss = compute_loss(
+            state_goal_similarities, log_probabilities,
+            manager_advantages, worker_advantages,
+            manager_normalized_advantages, worker_normalized_advantages,
+            entropies,
+            manager_value_coefficient, worker_value_coefficient, entropy_coefficient
+        )
 
-        for i in range(0, batch_size, mini_batch_size):
-            mini_batch_indexes = indexes[i: i + mini_batch_size]
-
-            loss = compute_loss(
-                state_goal_similarities[mini_batch_indexes], log_probabilities[mini_batch_indexes],
-                manager_advantages[mini_batch_indexes], worker_advantages[mini_batch_indexes],
-                manager_normalized_advantages[mini_batch_indexes], worker_normalized_advantages[mini_batch_indexes],
-                entropies[mini_batch_indexes],
-                manager_value_coefficient, worker_value_coefficient, entropy_coefficient
-            )
-
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
-            optimizer.step()
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+        optimizer.step()
 
         step += batch_size
         reward = total_reward/n_envs
