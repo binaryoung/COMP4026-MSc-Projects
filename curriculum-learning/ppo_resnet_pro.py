@@ -55,7 +55,7 @@ class PPO(nn.Module):
         super(PPO, self).__init__()
 
         self.encoder = nn.Sequential(
-            ResidualBlock(7, 16, stride=2),
+            ResidualBlock(7, 16),
             ResidualBlock(16, 16),
             ResidualBlock(16, 16),
             ResidualBlock(16, 32),
@@ -67,7 +67,7 @@ class PPO(nn.Module):
         )
 
         self.linear = nn.Sequential(
-            nn.Linear(1600, 256),  # 64, 5, 5
+            nn.Linear(6400, 256),  # 64, 10, 10
             nn.ReLU()
         )
 
