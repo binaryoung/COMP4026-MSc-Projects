@@ -229,7 +229,7 @@ def train():
     curriculum_cursor = mp.Value('i', 16)
     curriculum_rewards = deque(maxlen=50)
     curriculum_span = 20
-    curriculum_criterion = 10
+    curriculum_criterion = 9.5
 
     save_path = "./data"
     [os.makedirs(f"{save_path}/{dir}") for dir in ["data", "model", "plot", "runs"] if not os.path.exists(f"{save_path}/{dir}")]
