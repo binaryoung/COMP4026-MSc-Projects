@@ -49,18 +49,16 @@ class PPO(nn.Module):
         self.encoder = nn.Sequential(
             nn.Conv2d(7, 16, kernel_size=3, stride=1),
             nn.ReLU(),
+            ResidualBlock(16),
+            ResidualBlock(16),
+            ResidualBlock(16),
             nn.Conv2d(16, 32, kernel_size=2, stride=1),
             nn.ReLU(),
+            ResidualBlock(32),
+            ResidualBlock(32),
+            ResidualBlock(32),
             nn.Conv2d(32, 64, kernel_size=2, stride=1),
-            nn.ReLU()
-        )  
-
-        self.resnet = nn.Sequential(
-            ResidualBlock(64),
-            ResidualBlock(64),
-            ResidualBlock(64),
-            ResidualBlock(64),
-            ResidualBlock(64),
+            nn.ReLU(), 
             ResidualBlock(64),
             ResidualBlock(64),
             ResidualBlock(64),
@@ -77,7 +75,6 @@ class PPO(nn.Module):
     def forward(self, x):
         x = self.encoder(x)
 
-        x = self.resnet(x)
         x = x.view(x.size(0), -1)
 
         x = self.linear(x)
