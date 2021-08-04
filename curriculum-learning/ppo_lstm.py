@@ -58,7 +58,7 @@ class PPO(nn.Module):
 
         return actor, critic, hidden
     
-    def loss_forward(self, x, dones, truncated_steps):
+    def loss_forward(self, x, dones):
         n_envs, n_steps = x.size(0), x.size(1)
 
         x = x.view(-1, 7, 10, 10)
@@ -86,12 +86,9 @@ class PPO(nn.Module):
             cell[:, done] = 0
             done = dones[:, end_step]
 
-            for truncated_start_step in range(start_step,  end_step+1, truncated_steps):
-                hidden, cell = hidden.detach().requires_grad_(), cell.detach().requires_grad_()
-
-                rnn_input = x[:, truncated_start_step: min(truncated_start_step+truncated_steps, end_step+1)].permute(1, 0, 2)
-                rnn_output, (hidden, cell) = self.lstm(rnn_input, (hidden, cell))
-                rnn_outputs.append(rnn_output.permute(1, 0, 2))
+            rnn_input = x[:, start_step: end_step+1].permute(1,0,2)
+            rnn_output, (hidden, cell) = self.lstm(rnn_input, (hidden, cell))
+            rnn_outputs.append(rnn_output.permute(1, 0, 2))
 
         # assert sum([x.size(1) for x in rnn_outputs]) == n_steps
 
@@ -227,14 +224,14 @@ class ParallelEnv:
 
         return states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, total_reward
 
-def compute_loss(model, states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, truncated_steps, clip_range,  value_coefficient, entropy_coefficient):
+def compute_loss(model, states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, clip_range,  value_coefficient, entropy_coefficient):
     values = values.view(-1)
     actions = actions.view(-1)
     log_probabilities = log_probabilities.view(-1)
     normalized_advantages = normalized_advantages.view(-1)
     targets = targets.view(-1)
-
-    pi, v = model.loss_forward(states, dones, truncated_steps)
+    
+    pi, v = model.loss_forward(states, dones)
     v = v.squeeze(1)
 
     p = Categorical(pi)
@@ -264,7 +261,6 @@ def train():
     value_coefficient = 0.5
     entropy_coefficient = 0.01
     max_grad_norm = 0.5
-    truncated_steps = 20
 
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
@@ -305,7 +301,7 @@ def train():
                     actions[mini_batch_indexes], log_probabilities[mini_batch_indexes], 
                     advantages[mini_batch_indexes], normalized_advantages[mini_batch_indexes], targets[mini_batch_indexes],
                     dones[mini_batch_indexes],
-                    truncated_steps, clip_range, value_coefficient, entropy_coefficient
+                    clip_range, value_coefficient, entropy_coefficient
                 )
 
                 optimizer.zero_grad()
