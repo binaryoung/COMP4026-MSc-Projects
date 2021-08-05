@@ -83,7 +83,7 @@ class Worker(nn.Module):
 
         self.Wrnn = nn.LSTMCell(256, 16 * 8)
         self.phi = nn.Linear(256, 16, bias=False)
-        self.critic_head = nn.Linear(16 * 8, 1)
+        self.critic_head = nn.Linear(256, 1)
 
     """
     z: batch×d
@@ -101,7 +101,7 @@ class Worker(nn.Module):
         actor = torch.bmm(u, w).squeeze(-1)
         actor = F.softmax(actor, dim=-1)
 
-        critic = self.critic_head(hx)
+        critic = self.critic_head(z)
 
         return actor, critic, hidden
 
@@ -146,13 +146,13 @@ class Manager(nn.Module):
         goal_hat, hidden = self.Mrnn(state, hidden)
         goal = F.normalize(goal_hat)
 
-        if (0.05 > torch.rand(1).item()):
-            # To encourage exploration in transition policy,
-            # at every step with a small probability ε
-            # we emit a random goal sampled from a uni-variate Gaussian.
-            goal = torch.randn_like(goal, requires_grad=False)
+        # if (0.05 > torch.rand(1).item()):
+        #     # To encourage exploration in transition policy,
+        #     # at every step with a small probability ε
+        #     # we emit a random goal sampled from a uni-variate Gaussian.
+        #     goal = torch.randn_like(goal, requires_grad=False)
 
-        critic = self.critic_head(goal_hat)
+        critic = self.critic_head(z)
 
         return critic, hidden, state, goal
 
