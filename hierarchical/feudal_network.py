@@ -388,16 +388,16 @@ def compute_loss(state_goal_similarities, log_probabilities, manager_advantages,
     return loss
 
 def train():
-    learning_rate = 3e-4
+    learning_rate = 5e-4
     manager_gamma = 0.99
     worker_gamma = 0.95
     manager_lamda = 0.95
     worker_lamda = 0.95
-    alpha = 0.9
+    alpha = 0.8
     manager_value_coefficient = 0.5
     worker_value_coefficient = 0.5
     entropy_coefficient = 0.01
-    max_grad_norm = 0.5 
+    max_grad_norm = 5 
 
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
