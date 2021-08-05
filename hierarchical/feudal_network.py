@@ -21,7 +21,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class DilatedLSTM(nn.Module):
-    def __init__(self,  input_size, hidden_size,  dilation=10):
+    def __init__(self,  input_size, hidden_size,  dilation):
         super(DilatedLSTM, self).__init__()
 
         self.lstm = nn.LSTMCell(input_size, hidden_size)
@@ -78,9 +78,10 @@ class Perception(nn.Module):
         return x
 
 class Worker(nn.Module):
-    def __init__(self,):
+    def __init__(self, c):
         super(Worker, self).__init__()
 
+        self.c = c
         self.Wrnn = nn.LSTMCell(256, 16 * 8)
         self.phi = nn.Linear(256, 16, bias=False)
         self.critic_head = nn.Linear(256, 1)
@@ -116,24 +117,25 @@ class Worker(nn.Module):
         r_i = torch.zeros(batch_size, device=device)
         mask = torch.ones(batch_size, device=device)
 
-        for i in range(1, 11):
-            mask = mask * masks[10-i]
+        for i in range(1, self.c+1):
+            mask = mask * masks[self.c-i]
 
-            r_i_t = F.cosine_similarity(states[10] - states[10-i], goals[10-i])
+            r_i_t = F.cosine_similarity(states[self.c] - states[self.c-i], goals[self.c-i])
 
             r_i += (mask * r_i_t)
 
-        return r_i.detach() / 10
+        return r_i.detach() / self.c
 
 class Manager(nn.Module):
-    def __init__(self):
+    def __init__(self, c):
         super(Manager, self).__init__()
 
+        self.c = c
         self.Mspace = nn.Sequential(
             nn.Linear(256, 256),
             nn.ReLU()
         )
-        self.Mrnn = DilatedLSTM(256, 256, 10)
+        self.Mrnn = DilatedLSTM(256, 256, c)
         self.critic_head = nn.Linear(256, 1)
 
     """
@@ -162,19 +164,20 @@ class Manager(nn.Module):
     masks: list of length C+1, batch
     """
     def state_goal_similarity(self, states, goals, masks):
-        mask = torch.stack(masks[0:10]).prod(dim=0)
-        cosine_similarity = F.cosine_similarity(states[10] - states[0], goals[0])
+        mask = torch.stack(masks[0:self.c]).prod(dim=0)
+        cosine_similarity = F.cosine_similarity(states[self.c] - states[0], goals[0])
         cosine_similarity = mask * cosine_similarity
 
         return cosine_similarity
 
 class FeudalNetwork(nn.Module):
-    def __init__(self):
+    def __init__(self, c):
         super(FeudalNetwork, self).__init__()
 
+        self.c = c
         self.perception = Perception()
-        self.manager = Manager()
-        self.worker = Worker()
+        self.manager = Manager(c)
+        self.worker = Worker(c)
 
     """
     x: batch×d
@@ -272,6 +275,8 @@ class ParallelEnv:
             worker.join()
 
     def sample(self, model, steps, manager_gamma, worker_gamma, manager_lamda, worker_lamda, alpha):
+        c = model.c
+
         manager_values = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
         worker_values = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
 
@@ -288,14 +293,14 @@ class ParallelEnv:
         manager_advantages = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
         worker_advantages = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
 
-        window_states = [torch.zeros(self.n_workers, 256, device=device) for _ in range(11)]
-        window_goals = [torch.zeros(self.n_workers, 256, device=device) for _ in range(11)]
-        window_masks = [torch.zeros(self.n_workers, dtype=torch.int32, device=device) for _ in range(11)]
+        window_states = [torch.zeros(self.n_workers, 256, device=device) for _ in range(c+1)]
+        window_goals = [torch.zeros(self.n_workers, 256, device=device) for _ in range(c+1)]
+        window_masks = [torch.zeros(self.n_workers, dtype=torch.int32, device=device) for _ in range(c+1)]
 
         manager_hidden = (
             0,
-            torch.zeros(self.n_workers, 10, 256, device=device),
-            torch.zeros(self.n_workers, 10, 256, device=device),
+            torch.zeros(self.n_workers, c, 256, device=device),
+            torch.zeros(self.n_workers, c, 256, device=device),
         )
         worker_hidden = (
             torch.zeros(self.n_workers, 128, device=device),
@@ -338,8 +343,8 @@ class ParallelEnv:
             if steps >= 1:
                 intrinsic_rewards[:, t-1] = model.intrinsic_reward(window_states, window_goals, window_masks)
            
-            if steps >= 10:
-                state_goal_similarities[:, t-10] =  model.state_goal_similarity(window_states, window_goals, window_masks)
+            if steps >= c:
+                state_goal_similarities[:, t-c] =  model.state_goal_similarity(window_states, window_goals, window_masks)
 
 
         with torch.no_grad():
@@ -389,6 +394,7 @@ def compute_loss(state_goal_similarities, log_probabilities, manager_advantages,
 
 def train():
     learning_rate = 5e-4
+    horizon = 10
     manager_gamma = 0.99
     worker_gamma = 0.95
     manager_lamda = 0.95
@@ -409,7 +415,7 @@ def train():
     [os.makedirs(f"{save_path}/{dir}") for dir in ["data", "model", "plot", "runs"] if not os.path.exists(f"{save_path}/{dir}")]
 
     envs = ParallelEnv(n_envs)
-    model  = FeudalNetwork().to(device)
+    model = FeudalNetwork(horizon).to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     step = 0
