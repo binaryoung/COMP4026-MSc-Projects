@@ -31,32 +31,26 @@ class A2C(nn.Module):
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=2, stride=1),
             nn.ReLU()
-        )  
-
-        self.linear = nn.Sequential(
-            nn.Linear(2304, 512),  # 64, 6, 6
-            nn.ReLU()
         )
 
-        self.lstm = nn.LSTM(512, 256, 1)
+        self.linear = nn.Sequential(
+            nn.Linear(2304, 256),  # 64, 6, 6
+            nn.ReLU()
+        )
 
         self.actor_head = nn.Linear(256, 8)
         self.critic_head = nn.Linear(256, 1)
 
-    def forward(self, x, hidden):
+    def forward(self, x):
         x = self.encoder(x)
         x = x.view(x.size(0), -1)
 
         x = self.linear(x)
-        x = x.unsqueeze(0)
-
-        x, hidden = self.lstm(x, hidden)
-        x = x.squeeze(0)
 
         actor = F.softmax(self.actor_head(x), dim=-1)
         critic = self.critic_head(x)
 
-        return actor, critic, hidden
+        return actor, critic
 
 
 def collection_worker(queue):
@@ -137,11 +131,9 @@ class ParallelEnv:
         advantages = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
 
         observation = torch.tensor(self.reset(), device=device)
-        hidden = torch.zeros((1, self.n_workers, 256), device=device)
-        cell = torch.zeros((1, self.n_workers, 256), device=device)
 
         for t in range(steps):
-            pi, v, (hidden, cell) = model(observation, (hidden, cell))
+            pi, v = model(observation)
             values[:, t] = v.squeeze(1)
 
             p = Categorical(pi)
@@ -153,10 +145,8 @@ class ParallelEnv:
             observation = torch.tensor(observation, device=device)
             rewards[:, t] = torch.tensor(reward, device=device)
             dones[:, t] = torch.tensor(done, device=device)
-            hidden[:, done] = 0
-            cell[:, done] = 0
 
-        _, last_value, _ = model(observation, (hidden, cell))
+        _, last_value = model(observation)
         last_value = last_value.detach().squeeze(1)
         last_advantage = 0
 
