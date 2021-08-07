@@ -20,9 +20,9 @@ from boxoban_environment import BoxobanEnvironment
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-class PPO(nn.Module):
+class MetaRL(nn.Module):
     def __init__(self):
-        super(PPO, self).__init__()
+        super(MetaRL, self).__init__()
 
         self.encoder = nn.Sequential(
             nn.Conv2d(7, 16, kernel_size=3, stride=1),
@@ -38,19 +38,20 @@ class PPO(nn.Module):
             nn.ReLU()
         )
 
-        self.lstm = nn.LSTM(512, 256, 1)
+        self.gru = nn.GRU(523, 256, 1)  # 512 + 8 + 1 + 2
 
-        self.actor_head = nn.Linear(256, 7)
+        self.actor_head = nn.Linear(256, 8)
         self.critic_head = nn.Linear(256, 1)
 
-    def forward(self, x, hidden):
+    def forward(self, x, hidden, action, reward, done):
         x = self.encoder(x)
         x = x.view(x.size(0), -1)
-
         x = self.linear(x)
-        x = x.unsqueeze(0)
 
-        x, hidden = self.lstm(x, hidden)
+        x = torch.cat((x, action, reward, done), dim=1)
+
+        x = x.unsqueeze(0)
+        x, hidden = self.gru(x, hidden)
         x = x.squeeze(0)
 
         actor = F.softmax(self.actor_head(x), dim=-1)
@@ -58,7 +59,7 @@ class PPO(nn.Module):
 
         return actor, critic, hidden
     
-    def loss_forward(self, x, dones):
+    def loss_forward(self, x, actions, rewards, dones):
         n_envs, n_steps = x.size(0), x.size(1)
 
         x = x.view(-1, 7, 10, 10)
@@ -69,31 +70,26 @@ class PPO(nn.Module):
         x = self.linear(x)
         x = x.view(n_envs, n_steps, -1)
 
+        action = torch.zeros((n_envs, 1, 8), device=device)
+        reward = torch.zeros((n_envs, 1, 1), device=device)
+        done = torch.zeros((n_envs, 1, 2), device=device)
 
-        done_steps = (dones == True).any(0).nonzero().squeeze(1).tolist()
-        done_steps = [-1] + done_steps + ([] if done_steps[-1] == (n_steps - 1) else [n_steps-1])
+        actions = F.one_hot(actions.long(), num_classes=8).float()
+        rewards = rewards.unsqueeze(-1)
+        dones = F.one_hot(dones.long(), num_classes=2).float()
+
+        actions = torch.cat((action, actions), dim=1)[:, :-1]
+        rewards = torch.cat((reward, rewards), dim=1)[:, :-1]
+        dones = torch.cat((done, dones), dim=1)[:, :-1]
 
         hidden = torch.zeros((1, n_envs, 256), device=device)
-        cell = torch.zeros((1, n_envs, 256), device=device)
-        done = torch.full((n_envs, ), True,  device=device)
-        rnn_outputs = []
+        x = torch.cat((x, actions, rewards, dones), dim=2)
 
-        for i in range(len(done_steps) - 1):
-            start_step = done_steps[i] + 1
-            end_step = done_steps[i+1]
+        x = x.permute(1, 0, 2)
+        x, hidden = self.gru(x, hidden)
+        x = x.permute(1, 0, 2)
 
-            hidden[:, done] = 0
-            cell[:, done] = 0
-            done = dones[:, end_step]
-
-            rnn_input = x[:, start_step: end_step+1].permute(1,0,2)
-            rnn_output, (hidden, cell) = self.lstm(rnn_input, (hidden, cell))
-            rnn_outputs.append(rnn_output.permute(1, 0, 2))
-
-        # assert sum([x.size(1) for x in rnn_outputs]) == n_steps
-
-        x = torch.cat(rnn_outputs, dim=1)
-        x = x.view(n_envs * n_steps, -1)
+        x = x.reshape(n_envs * n_steps, -1)
 
         actor = F.softmax(self.actor_head(x), dim=-1)
         critic = self.critic_head(x)
@@ -106,18 +102,20 @@ def collection_worker(queue):
         queue.put(levelCollection.random())
 
 def worker(master, collection):
+    level = None
     while True:
         cmd, data = master.recv()
         if cmd == 'step':
             observation, reward, done, info = env.step(data)
             if done:
-                (id, score, trajectory, room, topology) = collection.get()
-                env = BoxobanEnvironment(room, topology)
+                (id, score, trajectory, room, topology) = level
+                env = BoxobanEnvironment(room.copy(), topology.copy())
                 observation = env.observation
             master.send((observation, reward, done, info))
         elif cmd == 'reset':
-            (id, score, trajectory, room, topology) = collection.get()
-            env = BoxobanEnvironment(room, topology)
+            level = collection.get()
+            (id, score, trajectory, room, topology) = level
+            env = BoxobanEnvironment(room.copy(), topology.copy())
             master.send(env.observation)
         elif cmd == 'close':
             master.close()
@@ -181,13 +179,16 @@ class ParallelEnv:
 
         observation = torch.tensor(self.reset(), device=device)
         hidden = torch.zeros((1, self.n_workers, 256), device=device)
-        cell = torch.zeros((1, self.n_workers, 256), device=device)
+
+        one_hot_action = torch.zeros((self.n_workers, 8), device=device)
+        one_hot_reward = torch.zeros((self.n_workers, 1), device=device)
+        one_hot_done = torch.zeros((self.n_workers, 2), device=device)
 
         for t in range(steps):
             with torch.no_grad():
                 states[:, t] = observation
 
-                pi, v, (hidden, cell) = model(observation, (hidden, cell))
+                pi, v, hidden = model(observation, hidden, one_hot_action, one_hot_reward, one_hot_done)
                 values[:, t] = v.squeeze(1)
 
                 p = Categorical(pi)
@@ -199,10 +200,13 @@ class ParallelEnv:
             observation = torch.tensor(observation, device=device)
             rewards[:, t] = torch.tensor(reward, device=device)
             dones[:, t] = torch.tensor(done, device=device)
-            hidden[:, done] = 0
-            cell[:, done] = 0
 
-        _, last_value, _ = model(observation, (hidden, cell))
+            one_hot_action = F.one_hot(action, num_classes=8).float()
+            one_hot_reward = torch.tensor(reward, dtype=torch.float32, device=device).unsqueeze(1)
+            one_hot_done = F.one_hot(torch.tensor(done, device=device).long(), num_classes=2).float()
+
+
+        _, last_value, _ = model(observation, hidden, one_hot_action, one_hot_reward, one_hot_done)
         last_value = last_value.detach().squeeze(1)
         last_advantage = 0
 
@@ -222,16 +226,17 @@ class ParallelEnv:
 
         total_reward = rewards.sum().item()
 
-        return states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, total_reward
+        return states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, rewards, total_reward
 
-def compute_loss(model, states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, clip_range,  value_coefficient, entropy_coefficient):
+def compute_loss(model, states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, rewards, clip_range,  value_coefficient, entropy_coefficient):
     values = values.view(-1)
+    batch_actions = actions.clone()
     actions = actions.view(-1)
     log_probabilities = log_probabilities.view(-1)
     normalized_advantages = normalized_advantages.view(-1)
     targets = targets.view(-1)
-    
-    pi, v = model.loss_forward(states, dones)
+
+    pi, v = model.loss_forward(states, batch_actions, rewards, dones)
     v = v.squeeze(1)
 
     p = Categorical(pi)
@@ -264,7 +269,7 @@ def train():
 
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
-    n_sample_steps = 128  # number of steps of the environment per sample
+    n_sample_steps = 256  # number of steps of the environment per sample
     n_mini_batches = 8  # number of training minibatches per update 
                                      # For recurrent policies, should be smaller or equal than number of environments run in parallel.
     n_epochs = 4   # number of training epochs per update
@@ -277,7 +282,7 @@ def train():
     [os.makedirs(f"{save_path}/{dir}") for dir in ["data", "model", "plot", "runs"] if not os.path.exists(f"{save_path}/{dir}")]
 
     envs = ParallelEnv(n_envs)
-    model  = PPO().to(device)
+    model  = MetaRL().to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     step = 0
@@ -286,7 +291,7 @@ def train():
 
     for update in range(1, n_updates+1):
 
-        states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, total_reward = envs.sample(model, n_sample_steps, gamma, lamda)
+        states, values, actions, log_probabilities, advantages, normalized_advantages, targets, dones, rewards, total_reward = envs.sample(model, n_sample_steps, gamma, lamda)
 
         for _ in range(n_epochs):
 
@@ -300,7 +305,7 @@ def train():
                     states[mini_batch_indexes], values[mini_batch_indexes], 
                     actions[mini_batch_indexes], log_probabilities[mini_batch_indexes], 
                     advantages[mini_batch_indexes], normalized_advantages[mini_batch_indexes], targets[mini_batch_indexes],
-                    dones[mini_batch_indexes],
+                    dones[mini_batch_indexes], rewards[mini_batch_indexes],
                     clip_range, value_coefficient, entropy_coefficient
                 )
 
@@ -310,7 +315,7 @@ def train():
                 optimizer.step()
 
         step += batch_size
-        reward = total_reward/n_envs
+        reward = total_reward/n_envs/(n_sample_steps/128)
         tail_rewards = log["reward"].tail(99)
         average_reward = (tail_rewards.sum() + reward) / (tail_rewards.count() +1)
         log.at[update] = [datetime.now(), update, step, reward, average_reward]
@@ -320,7 +325,7 @@ def train():
 
         print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step}: {reward:.2f}")
 
-        if update % 122 == 0:
+        if update % 61 == 0:
             fig = log["average_reward"].plot().get_figure()
             fig.savefig(f"{save_path}/plot/{step}.png")
             copy_tree("./runs", f"{save_path}/runs")
