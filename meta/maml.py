@@ -2,6 +2,7 @@ import math
 from datetime import datetime
 import os
 from distutils.dir_util import copy_tree
+import random
 
 import torch
 import torch.nn as nn
@@ -10,6 +11,7 @@ import torch.optim as optim
 from torch.distributions import Categorical
 import torch.multiprocessing as mp
 from torch.utils.tensorboard import SummaryWriter
+from learn2learn.algorithms import MAML
 import numpy as np
 import pandas as pd
 
@@ -38,7 +40,7 @@ class PPO(nn.Module):
             nn.ReLU()
         )
 
-        self.actor_head = nn.Linear(256, 7)
+        self.actor_head = nn.Linear(256, 8)
         self.critic_head = nn.Linear(256, 1)
 
     def forward(self, x):
@@ -58,18 +60,20 @@ def collection_worker(queue):
         queue.put(levelCollection.random())
 
 def worker(master, collection):
+    level = None
     while True:
         cmd, data = master.recv()
         if cmd == 'step':
             observation, reward, done, info = env.step(data)
             if done:
-                (id, score, trajectory, room, topology) = collection.get()
-                env = BoxobanEnvironment(room, topology)
+                (id, score, trajectory, room, topology) = level
+                env = BoxobanEnvironment(room.copy(), topology.copy())
                 observation = env.observation
             master.send((observation, reward, done, info))
         elif cmd == 'reset':
-            (id, score, trajectory, room, topology) = collection.get()
-            env = BoxobanEnvironment(room, topology)
+            level = data
+            (id, score, trajectory, room, topology) = level
+            env = BoxobanEnvironment(room.copy(), topology.copy())
             master.send(env.observation)
         elif cmd == 'close':
             master.close()
@@ -98,9 +102,10 @@ class ParallelEnv:
         p.start()
         self.collection = p
 
-    def reset(self):
+    def reset(self, level_id):
+        level = levelCollection.find(level_id)
         for master_end in self.master_ends:
-            master_end.send(('reset', None))
+            master_end.send(('reset', level))
         return np.stack([master_end.recv() for master_end in self.master_ends])
 
     def step(self, actions):
@@ -118,7 +123,7 @@ class ParallelEnv:
         for worker in self.workers:
             worker.join()
 
-    def sample(self, model, steps, gamma, lamda):
+    def sample(self, model, level_id, steps, gamma, lamda):
         states = torch.zeros((self.n_workers, steps, 7, 10, 10), dtype=torch.float32, device=device)
         values = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
 
@@ -131,7 +136,7 @@ class ParallelEnv:
 
         advantages = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
 
-        observation = torch.tensor(self.reset(), device=device)
+        observation = torch.tensor(self.reset(level_id), device=device)
 
         for t in range(steps):
             with torch.no_grad():
@@ -201,62 +206,83 @@ def compute_loss(model, states, values, actions, log_probabilities, advantages, 
     return loss
 
 def train():
-    learning_rate = 3e-4
+    meta_learning_rate = 3e-4
+    adapt_learning_rate = 1e-1
     gamma = 0.99
     lamda = 0.95
-    clip_range = 0.1
+    meta_clip_range = 0.2
+    adapt_clip_range = 0.3
     value_coefficient = 0.5
     entropy_coefficient = 0.01
     max_grad_norm = 0.5
 
     total_steps = 1e8  # number of timesteps
-    n_envs = 32  # number of environment copies simulated in parallel
+    n_tasks = 8 # tasks per update
+    adapt_steps = 2 # adaption steps
+    n_envs = 4  # number of environment copies simulated in parallel
     n_sample_steps = 128  # number of steps of the environment per sample
-    n_mini_batches = 16  # number of training minibatches per update 
-                                     # For recurrent policies, should be smaller or equal than number of environments run in parallel.
     n_epochs = 4   # number of training epochs per update
-    batch_size = n_envs * n_sample_steps
-    mini_batch_size = batch_size // n_mini_batches
+    batch_size = n_tasks * adapt_steps * n_envs * n_sample_steps
     n_updates = math.ceil(total_steps / batch_size)
-    assert (batch_size % n_mini_batches == 0)
 
     save_path = "./data"
     [os.makedirs(f"{save_path}/{dir}") for dir in ["data", "model", "plot", "runs"] if not os.path.exists(f"{save_path}/{dir}")]
 
     envs = ParallelEnv(n_envs)
-    model  = PPO().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    model = PPO().to(device)
+    meta_model = MAML(model, lr=adapt_learning_rate)
+    optimizer = optim.Adam(meta_model.parameters(), lr=meta_learning_rate)
 
     step = 0
     log = pd.DataFrame([], columns=["time", "update", "step", "reward", "average_reward"])
     writer = SummaryWriter()
 
     for update in range(1, n_updates+1):
+        meta_loss = 0
+        total_reward = 0
 
-        states, values, actions, log_probabilities, advantages, normalized_advantages, targets, total_reward = envs.sample(model, n_sample_steps, gamma, lamda)
+        for _ in range(n_tasks):
+            level_id = random.randint(0, 999999)
+            task_model = meta_model.clone()
+            
+            # Adapation
+            for _ in range(adapt_steps):
 
-        for _ in range(n_epochs):
+                states, values, actions, log_probabilities, advantages, normalized_advantages, targets, _ = envs.sample(task_model, level_id, n_sample_steps, gamma, lamda)
 
-            indexes = torch.randperm(batch_size)
+                for _ in range(n_epochs):
 
-            for i in range(0, batch_size, mini_batch_size):
-                mini_batch_indexes = indexes[i: i + mini_batch_size]
+                    loss = compute_loss(
+                        task_model,
+                        states, values, 
+                        actions, log_probabilities, 
+                        advantages, normalized_advantages, targets,
+                        adapt_clip_range, value_coefficient, entropy_coefficient
+                    )
 
-                loss = compute_loss(
-                    model, 
-                    states[mini_batch_indexes], values[mini_batch_indexes], 
-                    actions[mini_batch_indexes], log_probabilities[mini_batch_indexes], 
-                    advantages[mini_batch_indexes], normalized_advantages[mini_batch_indexes], targets[mini_batch_indexes],
-                    clip_range, value_coefficient, entropy_coefficient
-                )
+                    task_model.adapt(loss)
 
-                optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
-                optimizer.step()
+            # Validation
+            states, values, actions, log_probabilities, advantages, normalized_advantages, targets, task_reward = envs.sample(task_model, level_id, n_sample_steps, gamma, lamda)
+            total_reward += (task_reward / n_envs)
+
+            loss = compute_loss(
+                task_model,
+                states, values,
+                actions, log_probabilities,
+                advantages, normalized_advantages, targets,
+                meta_clip_range, value_coefficient, entropy_coefficient
+            )
+
+            meta_loss += loss
+
+        optimizer.zero_grad()
+        meta_loss.backward()
+        # torch.nn.utils.clip_grad_norm_(meta_model.parameters(), max_norm=max_grad_norm)
+        optimizer.step()
 
         step += batch_size
-        reward = total_reward/n_envs
+        reward = total_reward/n_tasks
         tail_rewards = log["reward"].tail(99)
         average_reward = (tail_rewards.sum() + reward) / (tail_rewards.count() +1)
         log.at[update] = [datetime.now(), update, step, reward, average_reward]
@@ -266,19 +292,19 @@ def train():
 
         print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step}: {reward:.2f}")
 
-        if update % 122 == 0:
+        if update % 61 == 0:
             fig = log["average_reward"].plot().get_figure()
             fig.savefig(f"{save_path}/plot/{step}.png")
             copy_tree("./runs", f"{save_path}/runs")
 
-            torch.save(model.state_dict(), f"{save_path}/model/{step}.pkl")
+            torch.save(meta_model.state_dict(), f"{save_path}/model/{step}.pkl")
             log.to_csv(f"{save_path}/data/{step}.csv", index=False, header=True)
 
 
     fig = log["average_reward"].plot().get_figure()
     fig.savefig(f"{save_path}/plot/{step}.png")
     copy_tree("./runs", f"{save_path}/runs")
-    torch.save(model.state_dict(), f"{save_path}/model/{step}.pkl")
+    torch.save(meta_model.state_dict(), f"{save_path}/model/{step}.pkl")
     log.to_csv(f"{save_path}/data/{step}.csv", index=False, header=True)
 
     envs.close()
