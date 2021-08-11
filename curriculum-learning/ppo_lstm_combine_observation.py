@@ -40,6 +40,11 @@ class PPO(nn.Module):
 
         self.lstm = nn.LSTM(512, 256, 1)
 
+        self.combination_linear = nn.Sequential(
+            nn.Linear(768, 256),  # 512 + 256
+            nn.ReLU()
+        )
+
         self.actor_head = nn.Linear(256, 7)
         self.critic_head = nn.Linear(256, 1)
 
@@ -48,10 +53,14 @@ class PPO(nn.Module):
         x = x.view(x.size(0), -1)
 
         x = self.linear(x)
+        observation = x
         x = x.unsqueeze(0)
 
         x, hidden = self.lstm(x, hidden)
         x = x.squeeze(0)
+
+        x = torch.cat((observation, x), dim=1)
+        x = self.combination_linear(x)
 
         actor = F.softmax(self.actor_head(x), dim=-1)
         critic = self.critic_head(x)
@@ -67,6 +76,7 @@ class PPO(nn.Module):
         x = x.view(x.size(0), -1)
 
         x = self.linear(x)
+        observation = x
         x = x.view(n_envs, n_steps, -1)
 
 
@@ -94,6 +104,9 @@ class PPO(nn.Module):
 
         x = torch.cat(rnn_outputs, dim=1)
         x = x.view(n_envs * n_steps, -1)
+
+        x = torch.cat((observation, x), dim=1)
+        x = self.combination_linear(x)
 
         actor = F.softmax(self.actor_head(x), dim=-1)
         critic = self.critic_head(x)
