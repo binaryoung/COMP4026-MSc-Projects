@@ -34,14 +34,14 @@ class PPO(nn.Module):
         )  
 
         self.linear = nn.Sequential(
-            nn.Linear(2304, 512),  # 64, 6, 6
+            nn.Linear(2304, 256),  # 64, 6, 6
             nn.ReLU()
         )
 
-        self.lstm = nn.LSTM(512, 256, 1)
+        self.lstm = nn.LSTM(256, 256, 1)
 
         self.combination_linear = nn.Sequential(
-            nn.Linear(768, 256),  # 512 + 256
+            nn.Linear(512, 256),  # 256 + 256
             nn.ReLU()
         )
 
