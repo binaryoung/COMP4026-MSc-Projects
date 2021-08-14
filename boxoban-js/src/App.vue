@@ -1,22 +1,48 @@
 <template>
-  <img alt="Vue logo" src="./assets/logo.png" />
-  <HelloWorld msg="Hello Vue 3 + Vite" />
+  <boxoban :room="room" :topology="topology" :control="true" :trajectory="trajectory"/>
+  <button @click="solve()">solve</button>
 </template>
 
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
+import {reactive} from 'vue'
+import Boxoban from './components/Boxoban.vue'
 
-// This starter template is using Vue 3 experimental <script setup> SFCs
-// Check out https://github.com/vuejs/rfcs/blob/master/active-rfcs/0040-script-setup.md
-</script>
+const room = [
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 1, 1, 1, 0, 0, 0],
+  [0, 0, 0, 0, 1, 1, 3, 1, 1, 0],
+  [0, 0, 0, 0, 0, 0, 1, 3, 5, 0],
+  [0, 0, 0, 0, 0, 1, 3, 3, 1, 0],
+  [0, 1, 2, 1, 2, 1, 1, 2, 1, 0],
+  [0, 0, 1, 1, 1, 1, 1, 2, 1, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+]
 
-<style>
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
+const topology = [
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 1, 1, 1, 0, 0, 0],
+  [0, 0, 0, 0, 1, 1, 1, 1, 1, 0],
+  [0, 0, 0, 0, 0, 0, 1, 1, 1, 0],
+  [0, 0, 0, 0, 0, 1, 1, 1, 1, 0],
+  [0, 1, 2, 1, 2, 1, 1, 2, 1, 0],
+  [0, 0, 1, 1, 1, 1, 1, 2, 1, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+]
+
+const expertTrajectory = [
+  2, 1, 3, 1, 2, 2, 2, 2, 2, 3, 3, 0, 3, 1, 3, 3, 0, 0, 6, 0, 2, 1, 1, 0, 0, 0,
+  2, 2, 1, 3, 0, 3, 1, 1, 3, 1, 1, 2, 2, 0, 3, 0, 3, 1, 2, 2, 1, 1, 2, 2,
+]
+
+const trajectory = reactive({
+  actions: [],
+})
+
+function solve() {
+  trajectory.actions = expertTrajectory
 }
-</style>
+</script>
