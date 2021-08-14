@@ -19,26 +19,58 @@ from boxoban_environment import BoxobanEnvironment
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(ResidualBlock, self).__init__()   
+
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+
+        if in_channels != out_channels or stride != 1:
+            self.downsample = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)
+        else:
+            self.downsample = None
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
+
 
 class MetaRL(nn.Module):
     def __init__(self):
         super(MetaRL, self).__init__()
 
         self.encoder = nn.Sequential(
-            nn.Conv2d(7, 16, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=2, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=2, stride=1),
-            nn.ReLU()
+            ResidualBlock(7, 16),
+            ResidualBlock(16, 16),
+            ResidualBlock(16, 16),
+            ResidualBlock(16, 32),
+            ResidualBlock(32, 32),
+            ResidualBlock(32, 32),
+            ResidualBlock(32, 64),
+            ResidualBlock(64, 64),
+            ResidualBlock(64, 64),
         )  
 
         self.linear = nn.Sequential(
-            nn.Linear(2304, 512),  # 64, 6, 6
+            nn.Linear(6400, 256),  # 64, 10, 10
             nn.ReLU()
         )
 
-        self.gru = nn.GRU(523, 256, 1)  # 512 + 8 + 1 + 2
+        self.gru = nn.GRU(267, 256, 1)  # 256 + 8 + 1 + 2
 
         self.actor_head = nn.Linear(256, 8)
         self.critic_head = nn.Linear(256, 1)
