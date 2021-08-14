@@ -34,11 +34,11 @@ class MetaRL(nn.Module):
         )  
 
         self.linear = nn.Sequential(
-            nn.Linear(2304, 512),  # 64, 6, 6
+            nn.Linear(2304, 256),  # 64, 6, 6
             nn.ReLU()
         )
 
-        self.gru = nn.GRU(523, 256, 1)  # 512 + 8 + 1 + 2
+        self.gru = nn.GRU(267, 256, 1)  # 256 + 8 + 1 + 2
 
         self.actor_head = nn.Linear(256, 8)
         self.critic_head = nn.Linear(256, 1)
