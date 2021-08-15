@@ -1,10 +1,10 @@
 <template>
-  <screen :room="room" ref="screen"/>
+  <screen :room="room" ref="screen" />
 </template>
 
 <script setup>
 import { reactive, ref, watch } from 'vue'
-import { onKeyStroke, useElementBounding, useWindowSize } from '@vueuse/core'
+import { onKeyStroke } from '@vueuse/core'
 import confetti from 'canvas-confetti'
 
 import Environment from '../environment'
@@ -26,9 +26,6 @@ const props = defineProps({
 const room = reactive(props.room)
 const environment = new Environment(room, props.topology)
 const screen = ref(null)
-
-const { x, y, top, right, bottom, left, width, height } = useElementBounding(screen)
-const { windowWidth, windowHeight } = useWindowSize()
 
 if (props.control == true) {
   onKeyStroke('ArrowUp', (e) => {
@@ -60,10 +57,17 @@ function step(action) {
   let result = environment.step(action)
 
   if (result.done == true && result.info.finished == true) {
+    const { left, top, width, height } = screen.value.$el.getBoundingClientRect()
+
     confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
+      particleCount: 250,
+      spread: 80,
+      ticks: 100,
+      gravity: 1.5,
+      origin: {
+        x: (left + width / 2) / window.innerWidth,
+        y: (top + height / 12 * 9) / window.innerHeight,
+      },
     })
   }
 }
