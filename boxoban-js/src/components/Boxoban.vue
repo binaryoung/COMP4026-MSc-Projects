@@ -4,7 +4,7 @@
 
 <script setup>
 import { reactive, ref, watch } from 'vue'
-import { onKeyStroke } from '@vueuse/core'
+import { onKeyStroke, useWindowSize } from '@vueuse/core'
 import confetti from 'canvas-confetti'
 
 import Environment from '../environment'
@@ -26,6 +26,8 @@ const props = defineProps({
 const room = reactive(props.room)
 const environment = new Environment(room, props.topology)
 const screen = ref(null)
+
+const { width: windowWidth, height: windowHeight } = useWindowSize()
 
 if (props.control == true) {
   onKeyStroke('ArrowUp', (e) => {
@@ -65,8 +67,8 @@ function step(action) {
       ticks: 100,
       gravity: 1.5,
       origin: {
-        x: (left + width / 2) / window.innerWidth,
-        y: (top + height / 12 * 9) / window.innerHeight,
+        x: (left + width / 2) / windowWidth.value,
+        y: (top + height / 12 * 9) / windowHeight.value,
       },
     })
   }
