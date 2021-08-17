@@ -10,6 +10,7 @@ from boxoban_env import BoxobanEnv
 
 from boxoban_environment import BoxobanEnvironment
 from meta_rl import MetaRL
+from meta_rl_resnet import MetaRL as MetaRLResNet
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -190,6 +191,22 @@ def meta_rl_solve_level(model, level):
 
     return False
 
+def test_meta_rl_resnet():
+    levels = build_levels()
+    success = []
+
+    model = MetaRLResNet().to(device)
+    model.load_state_dict(torch.load("models/meta_rl_resnet.pkl"))
+    model.eval()
+
+    for level in levels:
+        id, room, topology = level
+        if meta_rl_solve_level(model, level):
+            success.append(id)
+        print(f"Test level {id}")
+
+    return success
+
 def test_meta_rl():
     levels = build_levels()
     success = []
@@ -210,5 +227,8 @@ if __name__ == "__main__":
     render_meta_rl(0)
 
     success = test_meta_rl()
+    print(len(success), success)
+
+    success = test_meta_rl_resnet()
     print(len(success), success)
 
