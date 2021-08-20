@@ -1,11 +1,7 @@
-from .sokoban_env import SokobanEnv
-from .render_utils import room_to_rgb
-import os
+from gym_sokoban.envs.sokoban_env import SokobanEnv
+from gym_sokoban.envs.render_utils import room_to_rgb
 from os import listdir
 from os.path import isfile, join
-import requests
-import zipfile
-from tqdm import tqdm
 import random
 import numpy as np
 
@@ -19,7 +15,7 @@ class BoxobanEnv(SokobanEnv):
         self.difficulty = difficulty
         self.split = split
         self.verbose = False
-        super(BoxobanEnv, self).__init__(self.dim_room, max_steps, self.num_boxes, None)
+        super(BoxobanEnv, self).__init__(self.dim_room, max_steps, self.num_boxes, None, False)
         
 
     def reset(self,room):

@@ -1,9 +1,6 @@
-import sys
-sys.path.append("./tests/gym_sokoban")
 import hashlib
 from os import listdir
-import gym
-import gym_sokoban
+from boxoban_env import BoxobanEnv
 import pandas as pd
 import matplotlib.pyplot as plt
 import time
@@ -41,7 +38,7 @@ def build_test_levels():
     return levels
 
 def test_levels():
-    env = gym.make('Boxoban-Train-v0')
+    env = BoxobanEnv()
     env.set_maxsteps(1000)
 
     levels = build_levels()
