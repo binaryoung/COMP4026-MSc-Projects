@@ -1,14 +1,12 @@
 import sys
-sys.path.append("./tests/gym_sokoban")
 sys.path.append("./src")
 import numpy as np
-import gym
-import gym_sokoban
+from boxoban_env import BoxobanEnv
 import boxoban_level_collection as collection
 from boxoban_environment import BoxobanEnvironment
 
 def test_environment():
-    gym_env = gym.make('Boxoban-Train-v0')
+    gym_env = BoxobanEnv()
     gym_env.set_maxsteps(500)
 
     for i in range(5000):
@@ -48,7 +46,7 @@ def convert_state(state):
     return room
 
 def run_gym_levels(number):
-    env = gym.make('Boxoban-Train-v0')
+    env = BoxobanEnv()
     env.set_maxsteps(500)
 
     for i in range(number):
