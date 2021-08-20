@@ -12,6 +12,7 @@ from ppo import PPO
 from ppo_lstm import PPO as PPO_LSTM
 from ppo_resnet import PPO as PPO_ResNet
 from ppo_convlstm import PPO as PPO_ConvLSTM
+from ppo_lstm_resnet import PPO as PPO_LSTM_ResNet
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -284,6 +285,22 @@ def test_ppo_convlstm():
 
     return success
 
+def test_ppo_lstm_resnet():
+    levels = build_levels()
+    success = []
+
+    model = PPO_LSTM_ResNet().to(device)
+    model.load_state_dict(torch.load("models/ppo-lstm-resnet.pkl"))
+    model.eval()
+
+    for level in levels:
+        id, room, topology = level
+        if ppo_lstm_solve_level(model, level):
+            success.append(id)
+        print(f"Test level {id}")
+
+    return success
+
 if __name__ == "__main__":
     render_ppo(0)
 
@@ -297,4 +314,7 @@ if __name__ == "__main__":
     print(len(success), success)
 
     success = test_ppo_convlstm()
+    print(len(success), success)
+
+    success = test_ppo_lstm_resnet()
     print(len(success), success)
