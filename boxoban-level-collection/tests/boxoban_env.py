@@ -1,11 +1,7 @@
-from .sokoban_env import SokobanEnv
-from .render_utils import room_to_rgb
-import os
+from gym_sokoban.envs.sokoban_env import SokobanEnv
+from gym_sokoban.envs.render_utils import room_to_rgb
 from os import listdir
 from os.path import isfile, join
-import requests
-import zipfile
-from tqdm import tqdm
 import random
 import numpy as np
 
@@ -19,38 +15,10 @@ class BoxobanEnv(SokobanEnv):
         self.difficulty = difficulty
         self.split = split
         self.verbose = False
-        super(BoxobanEnv, self).__init__(self.dim_room, max_steps, self.num_boxes, None)
+        super(BoxobanEnv, self).__init__(self.dim_room, max_steps, self.num_boxes, None, False)
         
 
     def reset(self, room, topology):
-        # self.cache_path = '.sokoban_cache'
-        # self.train_data_dir = os.path.join(self.cache_path, 'boxoban-levels-master', self.difficulty, self.split)
-
-        # if not os.path.exists(self.cache_path):
-           
-        #     url = "https://github.com/deepmind/boxoban-levels/archive/master.zip"
-            
-        #     if self.verbose:
-        #         print('Boxoban: Pregenerated levels not downloaded.')
-        #         print('Starting download from "{}"'.format(url))
-
-        #     response = requests.get(url, stream=True)
-
-        #     if response.status_code != 200:
-        #         raise "Could not download levels from {}. If this problem occurs consistantly please report the bug under https://github.com/mpSchrader/gym-sokoban/issues. ".format(url)
-
-        #     os.makedirs(self.cache_path)
-        #     path_to_zip_file = os.path.join(self.cache_path, 'boxoban_levels-master.zip')
-        #     with open(path_to_zip_file, 'wb') as handle:
-        #         for data in tqdm(response.iter_content()):
-        #             handle.write(data)
-
-        #     zip_ref = zipfile.ZipFile(path_to_zip_file, 'r')
-        #     zip_ref.extractall(self.cache_path)
-        #     zip_ref.close()
-        
-        # self.select_room()
-
         room[room == 3] = 4
         self.player_position = np.argwhere(room == 5)[0]
         self.room_fixed, self.room_state, self.box_mapping = topology,room,{}

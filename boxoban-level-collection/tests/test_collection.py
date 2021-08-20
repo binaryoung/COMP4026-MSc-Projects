@@ -1,13 +1,10 @@
-import sys
-sys.path.append("./tests/gym-sokoban")
 import time
 import random
 import boxoban_level_collection as collection
 import timeit
 import pytest
 import pandas as pd
-import gym
-import gym_sokoban
+from boxoban_env import BoxobanEnv
 
 def test_find():
     level = collection.find(0)
@@ -79,7 +76,7 @@ def benchmark_range():
     print(end-start)
 
 def test_levels():
-    env = gym.make('Boxoban-Train-v0')
+    env = BoxobanEnv()
     env.set_maxsteps(1000)
 
     for i in range(5000):
