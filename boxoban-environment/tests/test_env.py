@@ -15,6 +15,8 @@ def test_environment():
         gym_observation = gym_env.reset(room.copy(), topology.copy())
         gym_observation = gym_env.room_state
         env = BoxobanEnvironment(room.copy(), topology.copy())
+        env.reward_per_step = -0.1
+        env.max_steps = 500
         observation = env.room
 
         assert np.array_equal(gym_observation.astype("uint8"), convert_state(observation)) == True
@@ -65,6 +67,7 @@ def run_env_levels(number):
     for i in range(number):
         (id, score, trajectory, room, topology) = collection.find(i)
         env = BoxobanEnvironment(room, topology)
+        env.max_steps = 500
 
         for action in trajectory:
             observation, reward, done, info = env.step(action)
