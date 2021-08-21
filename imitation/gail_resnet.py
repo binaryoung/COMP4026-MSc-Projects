@@ -351,7 +351,7 @@ def compute_loss(model, states, values, actions, log_probabilities, advantages, 
     return loss
 
 def train():
-    learning_rate = 3e-4
+    learning_rate = 1e-4
     gamma = 0.99
     lamda = 0.95
     clip_range = 0.1
