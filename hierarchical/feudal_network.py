@@ -45,7 +45,7 @@ class DilatedLSTM(nn.Module):
         mask[cursor] = False
         remaining_hx = hx[:, mask]
 
-        x = (hx[:, cursor] + remaining_hx.sum(dim=1).detach()) / self.dilation
+        x = (hx[:, cursor] + remaining_hx.sum(dim=1)) / self.dilation
 
         cursor = (cursor + 1) % self.dilation
 
