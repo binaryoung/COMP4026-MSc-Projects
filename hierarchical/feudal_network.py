@@ -394,7 +394,7 @@ def compute_loss(state_goal_similarities, log_probabilities, manager_advantages,
 
 def train():
     learning_rate = 5e-4
-    horizon = 10
+    horizon = 5
     manager_gamma = 0.99
     worker_gamma = 0.95
     manager_lamda = 0.95
