@@ -159,7 +159,7 @@ def performOneExperiment(model, hidden=None):
     return success
 
 def performNExperiments(n, model, hidden=None):
-    results= []
+    results = []
 
     for i in range(n):
         print(f"Perform experiment {i+1}")
@@ -185,6 +185,6 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load("ppo.pkl"))
     model.eval()
 
-    df =performNExperiments(10, model)
+    df = performNExperiments(10, model)
     df.to_csv("result.csv", index=False)
     print(df)
