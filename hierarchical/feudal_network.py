@@ -20,6 +20,7 @@ from boxoban_environment import BoxobanEnvironment
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
+# Dilated LSTM
 class DilatedLSTM(nn.Module):
     def __init__(self,  input_size, hidden_size,  dilation):
         super(DilatedLSTM, self).__init__()
@@ -51,6 +52,7 @@ class DilatedLSTM(nn.Module):
 
         return x, (cursor, hx, cx)
 
+# Observation encoder
 class Perception(nn.Module):
     def __init__(self):
         super(Perception, self).__init__()
@@ -77,6 +79,7 @@ class Perception(nn.Module):
 
         return x
 
+# Worker
 class Worker(nn.Module):
     def __init__(self, c):
         super(Worker, self).__init__()
@@ -110,6 +113,7 @@ class Worker(nn.Module):
     states: list of length C+1, batch×d
     goals: list of length C+1, batch×d
     masks: list of length C+1, batch
+    Compute intrinsic reward
     """
     def intrinsic_reward(self, states, goals, masks):
         batch_size = masks[0].size(0)
@@ -126,6 +130,7 @@ class Worker(nn.Module):
 
         return r_i.detach() / self.c
 
+# Manager
 class Manager(nn.Module):
     def __init__(self, c):
         super(Manager, self).__init__()
@@ -162,6 +167,7 @@ class Manager(nn.Module):
     states: list of length C+1, batch×d
     goals: list of length C+1, batch×d
     masks: list of length C+1, batch
+    Computer state goal similarity
     """
     def state_goal_similarity(self, states, goals, masks):
         mask = torch.stack(masks[0:self.c]).prod(dim=0)
@@ -170,6 +176,7 @@ class Manager(nn.Module):
 
         return cosine_similarity
 
+# Feudal Network
 class FeudalNetwork(nn.Module):
     def __init__(self, c):
         super(FeudalNetwork, self).__init__()
@@ -203,16 +210,20 @@ class FeudalNetwork(nn.Module):
 
         return manager_value, manager_hidden, worker_pi, worker_value, worker_hidden, states, goals
 
+    # Computer state goal similarity
     def state_goal_similarity(self, states, goals, masks):
         return self.manager.state_goal_similarity(states, goals, masks)
 
+    # Compute intrinsic reward
     def intrinsic_reward(self, states, goals, masks):
         return self.worker.intrinsic_reward(states, goals, masks)
 
+# Level collection process
 def collection_worker(queue):
     while True:
         queue.put(levelCollection.random())
 
+# Worker process
 def worker(master, collection):
     while True:
         cmd, data = master.recv()
@@ -234,6 +245,7 @@ def worker(master, collection):
         else:
             raise NotImplementedError
 
+# Parallel environments
 class ParallelEnv:
     def __init__(self, n_workers):
         self.n_workers = n_workers
@@ -254,11 +266,13 @@ class ParallelEnv:
         p.start()
         self.collection = p
 
+    # Reset environments
     def reset(self):
         for master_end in self.master_ends:
             master_end.send(('reset', None))
         return np.stack([master_end.recv() for master_end in self.master_ends])
 
+    # Step in environments
     def step(self, actions):
         for master_end, action in zip(self.master_ends, actions):
             master_end.send(('step', action))
@@ -268,12 +282,14 @@ class ParallelEnv:
 
         return np.stack(observations), np.stack(rewards), np.stack(dones), infos
 
+    # Close environments
     def close(self):
         for master_end in self.master_ends:
             master_end.send(('close', None))
         for worker in self.workers:
             worker.join()
 
+    # Sample trajectories in environments
     def sample(self, model, steps, manager_gamma, worker_gamma, manager_lamda, worker_lamda, alpha):
         c = model.c
 
@@ -355,6 +371,7 @@ class ParallelEnv:
             manager_last_advantage = 0
             worker_last_advantage = 0
 
+        # Compute GAE
         for t in reversed(range(steps)):
             manager_delta = rewards[:, t] + manager_gamma * manager_last_value * masks[:, t] - manager_values[:, t]
             manager_last_advantage = manager_delta + manager_gamma * manager_lamda * manager_last_advantage * masks[:, t]
@@ -366,6 +383,7 @@ class ParallelEnv:
             worker_advantages[:, t] = worker_last_advantage
             worker_last_value = worker_values[:, t]
 
+        # Flatten
         state_goal_similarities = state_goal_similarities.view(-1)
         log_probabilities = log_probabilities.view(-1)
         entropies = entropies.view(-1)
@@ -379,6 +397,7 @@ class ParallelEnv:
 
         return state_goal_similarities, log_probabilities,  manager_advantages, worker_advantages, manager_normalized_advantages, worker_normalized_advantages, entropies, total_reward
 
+# Compute loss
 def compute_loss(state_goal_similarities, log_probabilities, manager_advantages, worker_advantages, manager_normalized_advantages, worker_normalized_advantages, entropies,  manager_value_coefficient, worker_value_coefficient, entropy_coefficient):
     manager_policy_loss = (state_goal_similarities * manager_normalized_advantages.detach()).mean()
     worker_policy_loss = (log_probabilities * worker_normalized_advantages.detach()).mean()
@@ -393,17 +412,17 @@ def compute_loss(state_goal_similarities, log_probabilities, manager_advantages,
     return loss
 
 def train():
-    learning_rate = 5e-4
-    horizon = 5
-    manager_gamma = 0.99
-    worker_gamma = 0.95
-    manager_lamda = 0.95
-    worker_lamda = 0.95
-    alpha = 0.8
-    manager_value_coefficient = 0.5
-    worker_value_coefficient = 0.5
-    entropy_coefficient = 0.01
-    max_grad_norm = 5 
+    learning_rate = 5e-4 # learning rate
+    horizon = 5 # horizon
+    manager_gamma = 0.99 # manager gamma
+    worker_gamma = 0.95 # worker gamma
+    manager_lamda = 0.95 # manager lambda
+    worker_lamda = 0.95 # worker lambda
+    alpha = 0.8  # intrinsic reward coefficient
+    manager_value_coefficient = 0.5 # manager value coefficient in loss function
+    worker_value_coefficient = 0.5  # worker value coefficient in loss function
+    entropy_coefficient = 0.01 # entropy coefficient in loss function
+    max_grad_norm = 5  # max gradient norm
 
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
@@ -433,11 +452,13 @@ def train():
             manager_value_coefficient, worker_value_coefficient, entropy_coefficient
         )
 
+        # Update weights
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
         optimizer.step()
 
+        # Log training information
         step += batch_size
         reward = total_reward/n_envs
         tail_rewards = log["reward"].tail(99)
@@ -449,6 +470,7 @@ def train():
 
         print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step}: {reward:.2f}")
 
+        # Save data
         if update % 122 == 0:
             fig = log["average_reward"].plot().get_figure()
             fig.savefig(f"{save_path}/plot/{step}.png")
@@ -457,7 +479,7 @@ def train():
             torch.save(model.state_dict(), f"{save_path}/model/{step}.pkl")
             log.to_csv(f"{save_path}/data/{step}.csv", index=False, header=True)
 
-
+    # Save data
     fig = log["average_reward"].plot().get_figure()
     fig.savefig(f"{save_path}/plot/{step}.png")
     copy_tree("./runs", f"{save_path}/runs")

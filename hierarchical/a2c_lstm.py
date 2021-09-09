@@ -20,6 +20,7 @@ from boxoban_environment import BoxobanEnvironment
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
+# Model
 class A2C(nn.Module):
     def __init__(self):
         super(A2C, self).__init__()
@@ -59,10 +60,12 @@ class A2C(nn.Module):
         return actor, critic, hidden
 
 
+# Level collection process
 def collection_worker(queue):
     while True:
         queue.put(levelCollection.random())
 
+# Worker process
 def worker(master, collection):
     while True:
         cmd, data = master.recv()
@@ -84,6 +87,7 @@ def worker(master, collection):
         else:
             raise NotImplementedError
 
+# Parallel environments
 class ParallelEnv:
     def __init__(self, n_workers):
         self.n_workers = n_workers
@@ -104,11 +108,13 @@ class ParallelEnv:
         p.start()
         self.collection = p
 
+    # Reset environments
     def reset(self):
         for master_end in self.master_ends:
             master_end.send(('reset', None))
         return np.stack([master_end.recv() for master_end in self.master_ends])
 
+    # Step in environments
     def step(self, actions):
         for master_end, action in zip(self.master_ends, actions):
             master_end.send(('step', action))
@@ -118,12 +124,14 @@ class ParallelEnv:
 
         return np.stack(observations), np.stack(rewards), np.stack(dones), infos
 
+    # Close environments
     def close(self):
         for master_end in self.master_ends:
             master_end.send(('close', None))
         for worker in self.workers:
             worker.join()
 
+    # Sample trajectories in environments
     def sample(self, model, steps, gamma, lamda):
         values = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
 
@@ -160,6 +168,7 @@ class ParallelEnv:
         last_value = last_value.detach().squeeze(1)
         last_advantage = 0
 
+        # Compute GAE
         for t in reversed(range(steps)):
             mask = 1.0 - dones[:, t].int()
 
@@ -171,6 +180,7 @@ class ParallelEnv:
 
             last_value = values[:, t]
 
+        # Flatten
         log_probabilities = log_probabilities.view(-1)
         entropies = entropies.view(-1)
 
@@ -181,6 +191,7 @@ class ParallelEnv:
 
         return log_probabilities, advantages, normalized_advantages, entropies, total_reward
 
+# Compute loss
 def compute_loss(log_probabilities, advantages, normalized_advantages, entropies, value_coefficient, entropy_coefficient):
     policy_loss = (log_probabilities * normalized_advantages.detach()).mean()
     
@@ -193,12 +204,12 @@ def compute_loss(log_probabilities, advantages, normalized_advantages, entropies
     return loss
 
 def train():
-    learning_rate = 7e-4
-    gamma = 0.99
-    lamda = 0.95
-    value_coefficient = 0.5
-    entropy_coefficient = 0.01
-    max_grad_norm = 0.5
+    learning_rate = 7e-4  # learning rate
+    gamma = 0.99 # gamma
+    lamda = 0.95  # GAE lambda
+    value_coefficient = 0.5 # value coefficient in loss function
+    entropy_coefficient = 0.01 # entropy coefficient in loss function
+    max_grad_norm = 0.5  # max gradient norm
 
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
@@ -228,11 +239,13 @@ def train():
             value_coefficient, entropy_coefficient
         )
 
+        # Update weights
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
         optimizer.step()
 
+        # Log training information
         step += batch_size
         reward = total_reward/n_envs
         tail_rewards = log["reward"].tail(99)
@@ -244,6 +257,7 @@ def train():
 
         print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step}: {reward:.2f}")
 
+        # Save data
         if update % 122 == 0:
             fig = log["average_reward"].plot().get_figure()
             fig.savefig(f"{save_path}/plot/{step}.png")
@@ -253,6 +267,7 @@ def train():
             log.to_csv(f"{save_path}/data/{step}.csv", index=False, header=True)
 
 
+    # Save data
     fig = log["average_reward"].plot().get_figure()
     fig.savefig(f"{save_path}/plot/{step}.png")
     copy_tree("./runs", f"{save_path}/runs")
