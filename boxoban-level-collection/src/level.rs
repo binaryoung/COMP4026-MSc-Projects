@@ -14,10 +14,12 @@ trait RoomExt {
 }
 
 impl RoomExt for Room {
+    // Return room topology
     fn topology(&self) -> Self {
         self.mapv(|x| if x == 3 || x == 5 { 1 } else { x })
     }
 
+    // Convert room to ASCII string
     fn to_ascii(&self) -> String {
         self.indexed_iter()
             .map(|(location, &x)| {
@@ -51,6 +53,7 @@ pub struct Level {
     pub topology: Room,
 }
 
+// Parse generated level file
 fn parse_file(index:usize, path: PathBuf) -> Vec<Level> {
     let mut levels:Vec<Level> = Vec::with_capacity(1000);
 
@@ -106,6 +109,7 @@ pub struct Collection {
 }
 
 impl Collection {
+    //  Build level collection
     pub fn build() -> Collection {
         let mut map = HashMap::default();
         let mut tree: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
@@ -139,27 +143,32 @@ impl Collection {
         }
     }
 
+    //  Save level collection to file
     pub fn save(&self, path: &str) -> Result<(), String>{
         let encoded = serialize(self).map_err(|_| "Can't serialize".to_string())?;
         fs::write(path, encoded).map_err(|_| "Can't save to file".to_string())?;
         Ok(())
     }
 
+    //  Load level collection from file
     pub fn load(path: &str) -> Result<Collection, String>{
         let encoded =  fs::read(path).map_err(|_| "Can't read file".to_string())?;
         let levels: Collection = deserialize(&encoded[..]).map_err(|_| "Can't deserialize".to_string())?;
         Ok(levels)
     }
 
+    //  Load level collection from bytes
     pub fn load_from_bytes(encoded: &[u8]) -> Result<Collection, String>{
         let levels: Collection = deserialize(encoded).map_err(|_| "Can't deserialize".to_string())?;
         Ok(levels)
     }
 
+    // Return the level with the specified ID
     pub fn find(&self, id: usize) -> Result<&Level, String> {
         self.map.get(&id).ok_or(format!("Id {} not exist", id))
     }
 
+    // Return a random level within the specified difficulty score range
     pub fn range(&self, min: usize, max: usize) -> Result<&Level, String> {
         let mut rng = rand::thread_rng();
         let (score, ids) = self.tree.range(min..=max).choose(&mut rng).ok_or(format!("Range {}-{} is empty", min, max))?;
@@ -167,6 +176,7 @@ impl Collection {
         self.find(id)
     }
 
+    // Return a random level
     pub fn random(&self) -> Result<&Level, String> {
         let id = thread_rng().gen_range(0..self.len);
         self.find(id)

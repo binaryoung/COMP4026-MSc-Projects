@@ -13,6 +13,7 @@ static COLLECTION: Lazy<Collection> = Lazy::new(|| Collection::load_from_bytes(C
 type LevelPy<'py> = (usize, usize, Vec<u8>, &'py PyArray2<u8>, &'py PyArray2<u8>);
 
 impl Level {
+    // Convert level to python data type
     fn to_py<'py>(&self, py: Python<'py>) -> LevelPy<'py> {
         let Level {
             id,
@@ -29,18 +30,21 @@ impl Level {
     }
 }
 
+// Return the level with the specified ID
 #[pyfunction]
 fn find<'py>(py: Python<'py>, id: usize) -> PyResult<LevelPy<'py>> {
     let level = COLLECTION.find(id).map_err(|e| PyException::new_err(e))?;
     Ok(level.to_py(py))
 }
 
+// Return a random level within the specified difficulty score range
 #[pyfunction]
 fn range<'py>(py: Python<'py>, min: usize, max: usize) -> PyResult<LevelPy<'py>> {
     let level = COLLECTION.range(min, max).map_err(|e| PyException::new_err(e))?;
     Ok(level.to_py(py))
 }
 
+// Return a random level
 #[pyfunction]
 fn random<'py>(py: Python<'py>) -> PyResult<LevelPy<'py>> {
     let level = COLLECTION.random().map_err(|e| PyException::new_err(e))?;
