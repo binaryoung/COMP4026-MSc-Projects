@@ -24,6 +24,7 @@ trait RoomExt {
 }
 
 impl RoomExt for Room {
+    // Generate a new room
     fn new() -> Self {
         let mut rng: ThreadRng = thread_rng();
 
@@ -68,6 +69,7 @@ impl RoomExt for Room {
         room
     }
 
+    // Place player and targets in the room
     fn place_player_and_targets(&mut self) -> Result<(), &'static str> {
         let mut rng: ThreadRng = thread_rng();
 
@@ -95,14 +97,17 @@ impl RoomExt for Room {
         Ok(())
     }
 
+    // Return room topology
     fn topology(&self) -> Self {
         self.mapv(|x| if x == 5 { 1 } else { x })
     }
 
+    // Place all boxes on targets
     fn place_boxes(&self) -> Self {
         self.mapv(|x| if x == 2 { 4 } else { x })
     }
 
+    // Return current player location
     fn player_location(&self) -> (usize, usize) {
         self.indexed_iter()
             .find(|(_, &x)| x == 5)
@@ -111,9 +116,12 @@ impl RoomExt for Room {
             .to_owned()
     }
 
+    // Return the number of targets in the room
     fn target_number(&self) -> usize {
         self.fold(0, |acc, &x| if x == 2 { acc + 1 } else { acc })
     }
+
+    // Convert room to ASCII string
     fn to_ascii(&self) -> String {
         self.indexed_iter()
             .map(|(location, &x)| {
@@ -157,6 +165,7 @@ struct Level {
 }
 
 impl Level {
+    // Init a new level
     fn new() -> Result<Self, &'static str> {
         let mut room = Room::new();
         room.place_player_and_targets()?;
@@ -190,6 +199,7 @@ impl Level {
         Ok(level)
     }
 
+    // Expand the search tree using depth-first search
     fn depth_first_search(&self) {
         let state_number = EXPLORED_STATES.with(|states| states.borrow().len());
 
@@ -215,6 +225,7 @@ impl Level {
         });
     }
 
+    // Expand the search tree using breadth-first search
     fn breadth_first_search(&self) {
         let mut queue = VecDeque::with_capacity(100000);
 
@@ -226,6 +237,7 @@ impl Level {
         }
     }
 
+    // Generate child nodes
     fn sublevels(&self) -> Vec<Level> {
         (0usize..=7).filter_map(|action| {
             let level = self.reserve_move(action);
@@ -238,6 +250,7 @@ impl Level {
         }).collect()
     }
 
+    // Check if this level can be added to the search tree
     fn validate(&self) -> bool {
         let state_number = EXPLORED_STATES.with(|states| states.borrow().len());
 
@@ -260,6 +273,7 @@ impl Level {
         true
     }
 
+    // Reverse playing
     fn reserve_move(&self, action: usize) -> Self {
         let mut level = self.clone();
 
@@ -318,6 +332,7 @@ impl Level {
         level
     }
 
+    // Calculate the difficulty score for this level
     fn calculate_score(&mut self) {
         if self.room.target_number() != 4 {
             self.score = 0;
@@ -326,6 +341,7 @@ impl Level {
         }
     }
 
+    // Calculate box displacement score for this level
     fn box_displacement_score(&self) -> usize {
         self.box_mapping
             .iter()
@@ -336,6 +352,7 @@ impl Level {
             }) as usize
     }
 
+    // Generate the correct solution for this level
     fn reverse_trajectory(&mut self) {
         self.trajectory = self
             .trajectory
@@ -355,6 +372,7 @@ impl Level {
             .collect();
     }
 
+    // Convert solution trajectory to string
     fn trajectory_to_string(&self) -> String {
         self.trajectory
             .iter()
@@ -363,10 +381,12 @@ impl Level {
             .collect()
     }
 
+    // Convert metadata to string
     fn metadata_to_string(&self, index: usize) -> String {
         format!("; {} {} {}", index, self.score, self.trajectory_to_string())
     }
 
+    // Convert level to string
     fn to_string(&self, index: usize) -> String {
         format!(
             "{}\n{}\n",
@@ -376,6 +396,7 @@ impl Level {
     }
 }
 
+// Generate one level
 fn generate_level() -> Level {
     BEST_LEVEL.with(|level| {
         *level.borrow_mut() = Level::default();
@@ -408,6 +429,7 @@ fn generate_level() -> Level {
     }
 }
 
+// Generate one thousand levels and save them in one file
 fn write_one_thousand_levels(index: usize) {
     let filename = format!("{:03}.txt", index);
     let path = format!("levels/{}", filename);
@@ -429,6 +451,7 @@ fn write_one_thousand_levels(index: usize) {
 }
 
 fn main() {
+    // Generate 10 million levels
     (0..1000).into_par_iter().for_each(|i| {
         write_one_thousand_levels(i);
     });
