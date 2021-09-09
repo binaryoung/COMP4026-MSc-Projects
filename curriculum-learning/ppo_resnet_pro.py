@@ -20,6 +20,7 @@ from boxoban_environment import BoxobanEnvironment
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
+# Residual Block
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super(ResidualBlock, self).__init__()   
@@ -49,7 +50,7 @@ class ResidualBlock(nn.Module):
 
         return out
 
-
+# Model
 class PPO(nn.Module):
     def __init__(self):
         super(PPO, self).__init__()
@@ -71,7 +72,7 @@ class PPO(nn.Module):
             nn.ReLU()
         )
 
-        self.actor_head = nn.Linear(256, 7)
+        self.actor_head = nn.Linear(256, 8)
         self.critic_head = nn.Linear(256, 1)
 
     def forward(self, x):
@@ -85,11 +86,12 @@ class PPO(nn.Module):
 
         return actor, critic
 
-
+# Level collection process
 def collection_worker(queue):
     while True:
         queue.put(levelCollection.random())
 
+# Worker process
 def worker(master, collection):
     while True:
         cmd, data = master.recv()
@@ -111,6 +113,7 @@ def worker(master, collection):
         else:
             raise NotImplementedError
 
+# Parallel environments
 class ParallelEnv:
     def __init__(self, n_workers):
         self.n_workers = n_workers
@@ -131,11 +134,13 @@ class ParallelEnv:
         p.start()
         self.collection = p
 
+    # Reset environments
     def reset(self):
         for master_end in self.master_ends:
             master_end.send(('reset', None))
         return np.stack([master_end.recv() for master_end in self.master_ends])
 
+    # Step in environments
     def step(self, actions):
         for master_end, action in zip(self.master_ends, actions):
             master_end.send(('step', action))
@@ -145,12 +150,14 @@ class ParallelEnv:
 
         return np.stack(observations), np.stack(rewards), np.stack(dones), infos
 
+    # Close environments
     def close(self):
         for master_end in self.master_ends:
             master_end.send(('close', None))
         for worker in self.workers:
             worker.join()
 
+    # Sample trajectories in environments
     def sample(self, model, steps, gamma, lamda):
         states = torch.zeros((self.n_workers, steps, 7, 10, 10), dtype=torch.float32, device=device)
         values = torch.zeros((self.n_workers, steps), dtype=torch.float32, device=device)
@@ -186,6 +193,7 @@ class ParallelEnv:
         last_value = last_value.detach().squeeze(1)
         last_advantage = 0
 
+        # Compute GAE
         for t in reversed(range(steps)):
             mask = 1.0 - dones[:, t].int()
 
@@ -197,7 +205,7 @@ class ParallelEnv:
 
             last_value = values[:, t]
 
-
+        # Flatten
         states = states.view(-1, 7, 10, 10)
         values = values.view(-1)
         actions = actions.view(-1)
@@ -210,6 +218,7 @@ class ParallelEnv:
 
         return states, values, actions, log_probabilities, advantages, normalized_advantages, targets, total_reward
 
+# Compute loss
 def compute_loss(model, states, values, actions, log_probabilities, advantages, normalized_advantages, targets, clip_range,  value_coefficient, entropy_coefficient):
     pi, v = model(states)
     v = v.squeeze(1)
@@ -234,13 +243,13 @@ def compute_loss(model, states, values, actions, log_probabilities, advantages, 
     return loss
 
 def train():
-    learning_rate = 1e-4
-    gamma = 0.99
-    lamda = 0.95
-    clip_range = 0.1
-    value_coefficient = 0.5
-    entropy_coefficient = 0.01
-    max_grad_norm = 0.5
+    learning_rate = 1e-4  # learning rate
+    gamma = 0.99  # gamma
+    lamda = 0.95  # GAE lambda
+    clip_range = 0.1 # surrogate objective clip range
+    value_coefficient = 0.5  # value coefficient in loss function
+    entropy_coefficient = 0.01 # entropy coefficient in loss function
+    max_grad_norm = 0.5  # max gradient norm
 
     total_steps = 1e8  # number of timesteps
     n_envs = 32  # number of environment copies simulated in parallel
@@ -283,11 +292,13 @@ def train():
                     clip_range, value_coefficient, entropy_coefficient
                 )
 
+                # Update weights
                 optimizer.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
                 optimizer.step()
 
+        # Log training information
         step += batch_size
         reward = total_reward/n_envs
         tail_rewards = log["reward"].tail(99)
@@ -299,6 +310,7 @@ def train():
 
         print(f"[{datetime.now().strftime('%m-%d %H:%M:%S')}] {update},{step}: {reward:.2f}")
 
+        # Save data
         if update % 122 == 0:
             fig = log["average_reward"].plot().get_figure()
             fig.savefig(f"{save_path}/plot/{step}.png")
@@ -307,7 +319,7 @@ def train():
             torch.save(model.state_dict(), f"{save_path}/model/{step}.pkl")
             log.to_csv(f"{save_path}/data/{step}.csv", index=False, header=True)
 
-
+    # Save data
     fig = log["average_reward"].plot().get_figure()
     fig.savefig(f"{save_path}/plot/{step}.png")
     copy_tree("./runs", f"{save_path}/runs")
