@@ -75,12 +75,14 @@ class BoxobanEnvironment:
         next_player_location = player_location + change
         next_box_location = next_player_location + change
 
+        # Check if box next location beyond the room boundary
         if next_box_location[0] >= self.height or next_box_location[1] >= self.width:
             return 0
 
         next_player_location_state = self.room[next_player_location[0], next_player_location[1]]
         next_box_location_state = self.room[next_box_location[0], next_box_location[1]]
 
+        # Check if player can push. If unable to push, try to move
         if not (
             next_player_location_state in [3, 4] and
             next_box_location_state in [1, 2]
@@ -114,6 +116,7 @@ class BoxobanEnvironment:
         player_location = self.player_location.copy()
         next_player_location = player_location + change
         
+        # Check if player can move
         next_player_location_state = self.room[next_player_location[0], next_player_location[1]] 
         if not (next_player_location_state in [1, 2]):
             return 0
@@ -127,6 +130,7 @@ class BoxobanEnvironment:
     def set_max_steps(self, steps):
         self.max_steps = steps
 
+    # Convert current room state to observation
     @property
     def observation(self):
         wall = np.zeros((10, 10), dtype=np.float32)
