@@ -16,6 +16,7 @@ This repository contains code accompanying the dissertation"Solving Sokoban puzz
     ├── boxoban-environment                                    # Boxoban environment  
     ├── boxoban-level-collection                               # Boxoban level collection  
     ├── boxoban-level-generator                                # Boxoban level generator  
+    │   ├── levels                                             # One million training levels 
     ├── curriculum-learning
     │   ├── ppo.py                                             # PPO
     │   ├── ppo_lstm.py                                        # PPO LSTM
